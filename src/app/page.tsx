@@ -1,69 +1,139 @@
-import Image from "next/image";
+import { prisma } from "@/lib/prisma";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
+import { formatDate, tournamentTypeLabel } from "@/lib/utils";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+export default async function DashboardPage() {
+  const [tournaments, memberCount] = await Promise.all([
+    prisma.tournament.findMany({
+      orderBy: { date: "desc" },
+      take: 5,
+      include: {
+        rounds: {
+          include: { entries: { include: { shots: true } } },
+        },
+      },
+    }),
+    prisma.member.count(),
+  ]);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-stone-800">ダッシュボード</h1>
+        <p className="text-stone-500 text-sm mt-1">直近の試合結果と部員情報</p>
+      </div>
+
+      {/* サマリーカード */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-stone-500">登録部員数</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{memberCount}</p>
+            <p className="text-xs text-stone-400 mt-1">名</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-stone-500">
+              登録大会・試合数
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">
+              {await prisma.tournament.count()}
+            </p>
+            <p className="text-xs text-stone-400 mt-1">件</p>
+          </CardContent>
+        </Card>
+        <Card className="col-span-2 md:col-span-1">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-stone-500">クイックリンク</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            <Link
+              href="/input"
+              className="text-sm text-stone-700 hover:underline"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              → データを入力する
+            </Link>
+            <Link
+              href="/analysis/individual"
+              className="text-sm text-stone-700 hover:underline"
             >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+              → 個人分析を見る
+            </Link>
+            <Link
+              href="/analysis/team"
+              className="text-sm text-stone-700 hover:underline"
+            >
+              → チーム分析を見る
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* 直近の試合 */}
+      <div>
+        <h2 className="text-lg font-semibold mb-3">直近の試合・大会</h2>
+        {tournaments.length === 0 ? (
+          <Card>
+            <CardContent className="py-8 text-center text-stone-400">
+              まだデータがありません。
+              <Link href="/input" className="underline ml-1">
+                データを入力する
+              </Link>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {tournaments.map((t) => {
+              const allShots = t.rounds.flatMap((r) =>
+                r.entries.flatMap((e) => e.shots)
+              );
+              const hits = allShots.filter((s) => s.result === "HIT").length;
+              const total = allShots.length;
+              const rate =
+                total > 0 ? Math.round((hits / total) * 100) : null;
+
+              return (
+                <Card key={t.id}>
+                  <CardContent className="flex items-center justify-between py-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{t.name}</span>
+                        <Badge variant="outline">
+                          {tournamentTypeLabel(t.type)}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-stone-500 mt-0.5">
+                        {formatDate(t.date)} ／ {t.rounds.length}立ち
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      {rate !== null ? (
+                        <>
+                          <p className="text-2xl font-bold">{rate}%</p>
+                          <p className="text-xs text-stone-400">
+                            {hits}/{total}中
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-sm text-stone-400">データなし</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// 性別
+enum Gender {
+  MALE
+  FEMALE
+}
+
+// 大会種別
+enum TournamentType {
+  PUBLIC    // 公式戦
+  PRACTICE  // 練習試合
+  SELECTION // 校内選考
+}
+
+// 矢の結果
+enum ShotResult {
+  HIT    // ○ 的中
+  MISS   // × 外れ
+  SHITSU // / 失（無効・外れ扱い）
+}
+
+// 部員
+model Member {
+  id        Int      @id @default(autoincrement())
+  number    Int      @unique // 通し番号
+  gender    Gender
+  grade     Int?     // 学年（1〜3）
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entries Entry[]
+}
+
+// 大会・試合
+model Tournament {
+  id        Int            @id @default(autoincrement())
+  name      String
+  type      TournamentType
+  date      DateTime
+  note      String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  rounds Round[]
+}
+
+// 立ち（大会内のラウンド）
+model Round {
+  id           Int        @id @default(autoincrement())
+  tournamentId Int
+  roundNumber  Int        // 1=予選1, 2=予選2 など
+  label        String?    // "予選1立ち" など任意ラベル
+  createdAt    DateTime   @default(now())
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  entries    Entry[]
+
+  @@unique([tournamentId, roundNumber])
+}
+
+// 出場記録（どの部員がどの立ちに出たか）
+model Entry {
+  id               Int    @id @default(autoincrement())
+  roundId          Int
+  memberId         Int
+  positionInRound  Int    // 立ち内の順番（1〜5程度）
+  createdAt        DateTime @default(now())
+
+  round  Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  member Member @relation(fields: [memberId], references: [id])
+  shots  Shot[]
+
+  @@unique([roundId, memberId])
+  @@unique([roundId, positionInRound])
+}
+
+// 矢記録（1エントリにつき最大4射）
+model Shot {
+  id          Int        @id @default(autoincrement())
+  entryId     Int
+  arrowNumber Int        // 1〜4
+  result      ShotResult
+  createdAt   DateTime   @default(now())
+
+  entry Entry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, arrowNumber])
+}
