@@ -7,18 +7,27 @@ import { formatDate, tournamentTypeLabel } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const [tournaments, memberCount] = await Promise.all([
-    prisma.tournament.findMany({
-      orderBy: { date: "desc" },
-      take: 5,
-      include: {
-        rounds: {
-          include: { entries: { include: { shots: true } } },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let tournaments: any[] = [];
+  let memberCount = 0;
+  let dbError: string | null = null;
+
+  try {
+    [tournaments, memberCount] = await Promise.all([
+      prisma.tournament.findMany({
+        orderBy: { date: "desc" },
+        take: 5,
+        include: {
+          rounds: {
+            include: { entries: { include: { shots: true } } },
+          },
         },
-      },
-    }),
-    prisma.member.count(),
-  ]);
+      }),
+      prisma.member.count(),
+    ]);
+  } catch (e) {
+    dbError = e instanceof Error ? e.message : String(e);
+  }
 
   return (
     <div className="space-y-6">
@@ -26,6 +35,12 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-bold text-stone-800">ダッシュボード</h1>
         <p className="text-stone-500 text-sm mt-1">直近の試合結果と部員情報</p>
       </div>
+
+      {dbError && (
+        <div className="bg-red-50 border border-red-200 rounded p-4 text-sm text-red-700">
+          DB接続エラー: {dbError}
+        </div>
+      )}
 
       {/* サマリーカード */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -93,10 +108,13 @@ export default async function DashboardPage() {
         ) : (
           <div className="space-y-3">
             {tournaments.map((t) => {
-              const allShots = t.rounds.flatMap((r) =>
-                r.entries.flatMap((e) => e.shots)
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const allShots = t.rounds.flatMap((r: any) =>
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                r.entries.flatMap((e: any) => e.shots)
               );
-              const hits = allShots.filter((s) => s.result === "HIT").length;
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const hits = allShots.filter((s: any) => s.result === "HIT").length;
               const total = allShots.length;
               const rate =
                 total > 0 ? Math.round((hits / total) * 100) : null;
