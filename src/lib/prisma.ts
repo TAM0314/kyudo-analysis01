@@ -3,15 +3,25 @@
 import { PrismaClient } from "@/generated/prisma/client";
 
 function createPrismaClient(): PrismaClient {
-  if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith("postgres")) {
-    // Vercel / Neon: HTTP transport (WebSocketless)
-    const { neon } = require("@neondatabase/serverless");
-    const { PrismaNeonHttp } = require("@prisma/adapter-neon");
-    const sql = neon(process.env.DATABASE_URL);
-    const adapter = new PrismaNeonHttp(sql);
-    return new PrismaClient({ adapter } as any);
+  const dbUrl = process.env.DATABASE_URL ?? "";
+
+  if (dbUrl.startsWith("postgres")) {
+    try {
+      const { neon } = require("@neondatabase/serverless");
+      const { PrismaNeonHttp } = require("@prisma/adapter-neon");
+      // channel_binding パラメータを除去（HTTP transport非対応）
+      const cleanUrl = dbUrl
+        .replace(/[?&]channel_binding=[^&]*/g, "")
+        .replace(/\?&/, "?")
+        .replace(/\?$/, "");
+      const sql = neon(cleanUrl || dbUrl);
+      const adapter = new PrismaNeonHttp(sql);
+      return new PrismaClient({ adapter } as any);
+    } catch (e) {
+      console.error("[prisma] Neon client creation failed:", e);
+      throw e;
+    }
   } else {
-    // local SQLite
     const path = require("path");
     const Database = require("better-sqlite3");
     const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
