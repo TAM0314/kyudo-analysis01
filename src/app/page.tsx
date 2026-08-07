@@ -10,10 +10,11 @@ export default async function DashboardPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let tournaments: any[] = [];
   let memberCount = 0;
+  let tournamentCount = 0;
   let dbError: string | null = null;
 
   try {
-    [tournaments, memberCount] = await Promise.all([
+    [tournaments, memberCount, tournamentCount] = await Promise.all([
       prisma.tournament.findMany({
         orderBy: { date: "desc" },
         take: 5,
@@ -24,6 +25,7 @@ export default async function DashboardPage() {
         },
       }),
       prisma.member.count(),
+      prisma.tournament.count(),
     ]);
   } catch (e) {
     dbError = e instanceof Error ? e.message : String(e);
@@ -61,7 +63,7 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold">
-              {await prisma.tournament.count()}
+              {tournamentCount}
             </p>
             <p className="text-xs text-stone-400 mt-1">件</p>
           </CardContent>
