@@ -6,9 +6,9 @@ function createPrismaClient(): PrismaClient {
   if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith("postgres")) {
     // Vercel / Neon: HTTP transport (WebSocketless)
     const { neon } = require("@neondatabase/serverless");
-    const { PrismaNeonHTTP } = require("@prisma/adapter-neon");
+    const { PrismaNeonHttp } = require("@prisma/adapter-neon");
     const sql = neon(process.env.DATABASE_URL);
-    const adapter = new PrismaNeonHTTP(sql);
+    const adapter = new PrismaNeonHttp(sql);
     return new PrismaClient({ adapter } as any);
   } else {
     // local SQLite
