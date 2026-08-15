@@ -136,10 +136,16 @@ export async function GET() {
   });
 }
 
-/** POST: import members from Excel (merge / upsert by number). Never reads names. */
+/** POST: list sheets (listOnly) or import members. Never reads names. */
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
+  const listOnly = formData.get("listOnly") === "true";
+  const sheetNameRaw = formData.get("sheetName");
+  const requestedSheet =
+    typeof sheetNameRaw === "string" && sheetNameRaw.trim()
+      ? sheetNameRaw.trim()
+      : null;
 
   if (!file) {
     return NextResponse.json(
@@ -150,12 +156,43 @@ export async function POST(req: NextRequest) {
 
   const arrayBuffer = await file.arrayBuffer();
   const wb = XLSX.read(arrayBuffer, { type: "array" });
-  const ws = wb.Sheets[wb.SheetNames[0]];
+
+  if (wb.SheetNames.length === 0) {
+    return NextResponse.json(
+      { error: "\u30b7\u30fc\u30c8\u304c\u3042\u308a\u307e\u305b\u3093" },
+      { status: 400 }
+    );
+  }
+
+  if (listOnly) {
+    const preferred =
+      wb.SheetNames.find((n) => n === "\u90e8\u54e1" || n.includes("\u90e8\u54e1")) ??
+      wb.SheetNames[0];
+    return NextResponse.json({
+      sheets: wb.SheetNames,
+      suggested: preferred,
+    });
+  }
+
+  if (requestedSheet && !wb.SheetNames.includes(requestedSheet)) {
+    return NextResponse.json(
+      {
+        error: `\u30b7\u30fc\u30c8\u300c${requestedSheet}\u300d\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093`,
+        sheets: wb.SheetNames,
+      },
+      { status: 400 }
+    );
+  }
+
+  const sheetName = requestedSheet ?? wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
   const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws);
 
   if (rawRows.length === 0) {
     return NextResponse.json(
-      { error: "Excel\u306b\u30c7\u30fc\u30bf\u884c\u304c\u3042\u308a\u307e\u305b\u3093" },
+      {
+        error: `\u30b7\u30fc\u30c8\u300c${sheetName}\u300d\u306b\u30c7\u30fc\u30bf\u884c\u304c\u3042\u308a\u307e\u305b\u3093`,
+      },
       { status: 400 }
     );
   }
@@ -222,7 +259,8 @@ export async function POST(req: NextRequest) {
     ok: true,
     created,
     updated,
+    sheetName,
     errors,
-    message: `\u65b0\u898f${created}\u540d\u30fb\u66f4\u65b0${updated}\u540d\u3092\u30a4\u30f3\u30dd\u30fc\u30c8\u3057\u307e\u3057\u305f`,
+    message: `\u30b7\u30fc\u30c8\u300c${sheetName}\u300d\u304b\u3089\u65b0\u898f${created}\u540d\u30fb\u66f4\u65b0${updated}\u540d\u3092\u30a4\u30f3\u30dd\u30fc\u30c8\u3057\u307e\u3057\u305f`,
   });
 }

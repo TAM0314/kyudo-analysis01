@@ -35,6 +35,10 @@ export default function MembersPage() {
   const [grade, setGrade] = useState("");
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [listingSheets, setListingSheets] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -98,14 +102,54 @@ export default function MembersPage() {
     await fetchMembers();
   }
 
-  async function handleExcelImport(e: React.ChangeEvent<HTMLInputElement>) {
+  function clearImportSelection() {
+    setImportFile(null);
+    setSheetNames([]);
+    setSelectedSheet("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setMessage(null);
+    setImportFile(file);
+    setSheetNames([]);
+    setSelectedSheet("");
+    setListingSheets(true);
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("listOnly", "true");
+
+    try {
+      const res = await fetch("/api/members/import", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage(data.error ?? "シート一覧の取得に失敗しました");
+        clearImportSelection();
+      } else {
+        setSheetNames(data.sheets ?? []);
+        setSelectedSheet(data.suggested ?? data.sheets?.[0] ?? "");
+      }
+    } catch {
+      setMessage("通信エラーが発生しました");
+      clearImportSelection();
+    }
+    setListingSheets(false);
+  }
+
+  async function handleExcelImport() {
+    if (!importFile || !selectedSheet) return;
     setImporting(true);
     setMessage(null);
 
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", importFile);
+    formData.append("sheetName", selectedSheet);
 
     try {
       const res = await fetch("/api/members/import", {
@@ -121,6 +165,7 @@ export default function MembersPage() {
             ? `（エラー${data.errors.length}件: ${data.errors[0]}）`
             : "";
         setMessage(`${data.message}${errNote}`);
+        clearImportSelection();
         await fetchMembers();
       }
     } catch {
@@ -128,7 +173,6 @@ export default function MembersPage() {
     }
 
     setImporting(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   const males = members.filter((m) => m.gender === "MALE");
@@ -255,9 +299,13 @@ export default function MembersPage() {
               </Button>
               <Label
                 htmlFor="member-import-file"
-                className="cursor-pointer inline-flex items-center px-4 py-2 bg-stone-800 text-white hover:bg-stone-700 rounded-md text-sm font-medium transition-colors"
+                className="cursor-pointer inline-flex items-center px-4 py-2 bg-stone-100 hover:bg-stone-200 rounded-md text-sm font-medium transition-colors"
               >
-                {importing ? "インポート中..." : "Excelファイルを選択"}
+                {listingSheets
+                  ? "シート確認中..."
+                  : importFile
+                    ? "別のファイルを選ぶ"
+                    : "Excelファイルを選択"}
               </Label>
               <Input
                 id="member-import-file"
@@ -265,10 +313,46 @@ export default function MembersPage() {
                 type="file"
                 accept=".xlsx,.xls"
                 className="hidden"
-                onChange={handleExcelImport}
-                disabled={importing}
+                onChange={handleFileSelected}
+                disabled={importing || listingSheets}
               />
+              {importFile && (
+                <span className="text-sm text-stone-500 truncate max-w-xs">
+                  {importFile.name}
+                </span>
+              )}
             </div>
+
+            {sheetNames.length > 0 && (
+              <div className="space-y-3 border-t pt-4">
+                <div className="max-w-xs">
+                  <Label>読み込むシート</Label>
+                  <Select
+                    value={selectedSheet}
+                    onValueChange={(v) => setSelectedSheet(v ?? "")}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="シートを選択" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sheetNames.map((name) => (
+                        <SelectItem key={name} value={name}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  onClick={handleExcelImport}
+                  disabled={importing || !selectedSheet}
+                >
+                  {importing
+                    ? "インポート中..."
+                    : `「${selectedSheet}」をインポート`}
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
