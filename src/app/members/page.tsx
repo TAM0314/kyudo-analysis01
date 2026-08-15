@@ -241,7 +241,7 @@ export default function MembersPage() {
                 （任意・1〜3）
               </p>
               <p className="text-xs text-stone-400">
-                ※ 氏名列があっても参照・保存しません
+                ※ テンプレートはA列空欄・B列から番号/性別/学年です。氏名は入れないでください
               </p>
             </div>
             <div className="flex flex-wrap gap-3 items-center">

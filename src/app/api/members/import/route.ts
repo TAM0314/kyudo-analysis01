@@ -111,21 +111,18 @@ function sanitizeRow(row: Record<string, unknown>): Record<string, unknown> {
   return safe;
 }
 
-/** GET: download Excel template (番号 / 性別 / 学年 only — no name column) */
+/** GET: download Excel template
+ * A列は空欄（氏名列の位置合わせ）、B列以降が 番号 / 性別 / 学年
+ */
 export async function GET() {
-  const rows = [
-    {
-      "\u756a\u53f7": 1,
-      "\u6027\u5225": "\u7537",
-      "\u5b66\u5e74": 2,
-    },
-    {
-      "\u756a\u53f7": 2,
-      "\u6027\u5225": "\u5973",
-      "\u5b66\u5e74": 1,
-    },
+  const aoa = [
+    ["", "\u756a\u53f7", "\u6027\u5225", "\u5b66\u5e74"],
+    ["", 1, "\u7537", 2],
+    ["", 2, "\u5973", 1],
   ];
-  const ws = XLSX.utils.json_to_sheet(rows);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  // Column widths: A empty spacer, then data columns
+  ws["!cols"] = [{ wch: 4 }, { wch: 8 }, { wch: 8 }, { wch: 8 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "\u90e8\u54e1");
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
