@@ -26,6 +26,18 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  await prisma.member.delete({ where: { id: Number(id) } });
+  const memberId = Number(id);
+
+  const entries = await prisma.entry.findMany({
+    where: { memberId },
+    select: { id: true },
+  });
+  const entryIds = entries.map((e) => e.id);
+  if (entryIds.length > 0) {
+    await prisma.shot.deleteMany({ where: { entryId: { in: entryIds } } });
+    await prisma.entry.deleteMany({ where: { id: { in: entryIds } } });
+  }
+
+  await prisma.member.delete({ where: { id: memberId } });
   return NextResponse.json({ ok: true });
 }
