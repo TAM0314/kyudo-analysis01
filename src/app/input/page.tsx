@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -97,6 +97,21 @@ export default function InputPage() {
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  // Excelインポート
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState("");
+  const [listingSheets, setListingSheets] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importName, setImportName] = useState("");
+  const [importDate, setImportDate] = useState(
+    new Date().toISOString().slice(0, 10)
+  );
+  const [importType, setImportType] = useState<TournamentType>("PUBLIC");
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   const fetchTournaments = useCallback(async () => {
     const res = await fetch("/api/tournaments");
@@ -231,14 +246,225 @@ export default function InputPage() {
     setEntries((prev) => prev.map((e) => ({ ...e, saved: true })));
   }
 
+  function clearImport() {
+    setImportFile(null);
+    setSheetNames([]);
+    setSelectedSheet("");
+    setImportName("");
+    if (importFileRef.current) importFileRef.current.value = "";
+  }
+
+  async function handleImportFileSelected(
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportMessage(null);
+    setImportFile(file);
+    setSheetNames([]);
+    setSelectedSheet("");
+    setListingSheets(true);
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("listOnly", "true");
+
+    try {
+      const res = await fetch("/api/tournaments/import", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setImportMessage(data.error ?? "シート一覧の取得に失敗しました");
+        clearImport();
+      } else {
+        setSheetNames(data.sheets ?? []);
+        setSelectedSheet(data.suggested ?? data.sheets?.[0] ?? "");
+      }
+    } catch {
+      setImportMessage("通信エラーが発生しました");
+      clearImport();
+    }
+    setListingSheets(false);
+  }
+
+  async function runTournamentImport() {
+    if (!importFile || !selectedSheet) return;
+    setImporting(true);
+    setImportMessage(null);
+
+    const formData = new FormData();
+    formData.append("file", importFile);
+    formData.append("sheetName", selectedSheet);
+    formData.append("name", importName);
+    formData.append("date", importDate);
+    formData.append("type", importType);
+
+    try {
+      const res = await fetch("/api/tournaments/import", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setImportMessage(data.error ?? "インポートに失敗しました");
+      } else {
+        const warn =
+          data.warnings?.length > 0
+            ? `（注意${data.warnings.length}件）`
+            : "";
+        setImportMessage(`${data.message}${warn}`);
+        clearImport();
+        await fetchTournaments();
+        await fetchMembers();
+        if (data.tournament?.id) {
+          setSelectedTournamentId(data.tournament.id);
+          setSelectedRoundId(null);
+        }
+      }
+    } catch {
+      setImportMessage("通信エラーが発生しました");
+    }
+    setImporting(false);
+  }
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-stone-800">データ入力</h1>
         <p className="text-stone-500 text-sm mt-1">
-          大会・立ちを選択して、矢の○×/を入力してください
+          大会・立ちを選択して、矢の○×/を入力してください。大会結果Excelからも取り込めます。
         </p>
       </div>
+
+      {/* Excelインポート */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-base">大会結果Excelから取り込む</CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowImport(!showImport)}
+          >
+            {showImport ? "閉じる" : "開く"}
+          </Button>
+        </CardHeader>
+        {showImport && (
+          <CardContent className="space-y-4">
+            <p className="text-sm text-stone-500">
+              立順・番号・性別・1回目/2回目の○×を読み込みます。氏名は読みません。
+              未登録の番号は部員として自動追加し、決勝射詰めは無視します。
+            </p>
+
+            <div className="flex flex-wrap gap-3 items-center">
+              <Label
+                htmlFor="tournament-import-file"
+                className="cursor-pointer inline-flex items-center px-4 py-2 bg-stone-100 hover:bg-stone-200 rounded-md text-sm font-medium"
+              >
+                {listingSheets
+                  ? "シート確認中..."
+                  : importFile
+                    ? "別のファイルを選ぶ"
+                    : "Excelファイルを選択"}
+              </Label>
+              <Input
+                id="tournament-import-file"
+                ref={importFileRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleImportFileSelected}
+                disabled={importing || listingSheets}
+              />
+              {importFile && (
+                <span className="text-sm text-stone-500 truncate max-w-xs">
+                  {importFile.name}
+                </span>
+              )}
+            </div>
+
+            {sheetNames.length > 0 && (
+              <div className="space-y-3 border rounded-md p-4 bg-stone-50">
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div>
+                    <Label>読み込むシート</Label>
+                    <Select
+                      value={selectedSheet}
+                      onValueChange={(v) => setSelectedSheet(v ?? "")}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="シートを選択" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {sheetNames.map((name) => (
+                          <SelectItem key={name} value={name}>
+                            {name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>大会名</Label>
+                    <Input
+                      value={importName}
+                      onChange={(e) => setImportName(e.target.value)}
+                      placeholder="空欄ならExcel見出しを使用"
+                    />
+                  </div>
+                  <div>
+                    <Label>種別</Label>
+                    <Select
+                      value={importType}
+                      onValueChange={(v) =>
+                        setImportType(v as TournamentType)
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="PUBLIC">公式戦</SelectItem>
+                        <SelectItem value="PRACTICE">練習試合</SelectItem>
+                        <SelectItem value="SELECTION">校内選考</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>日付</Label>
+                    <Input
+                      type="date"
+                      value={importDate}
+                      onChange={(e) => setImportDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <Button
+                  onClick={runTournamentImport}
+                  disabled={importing || !selectedSheet}
+                >
+                  {importing ? "取り込み中..." : "この内容で取り込む"}
+                </Button>
+              </div>
+            )}
+
+            {importMessage && (
+              <Badge
+                variant={
+                  importMessage.includes("失敗") ||
+                  importMessage.includes("エラー")
+                    ? "destructive"
+                    : "default"
+                }
+                className="whitespace-normal max-w-full h-auto py-1"
+              >
+                {importMessage}
+              </Badge>
+            )}
+          </CardContent>
+        )}
+      </Card>
 
       {/* 大会選択 */}
       <Card>

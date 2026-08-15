@@ -79,29 +79,6 @@ export default function MembersPage() {
     await fetchMembers();
   }
 
-  // 一括登録（1〜N番）
-  async function bulkAdd() {
-    const input = prompt("何番まで一括登録しますか？（例: 40）");
-    if (!input) return;
-    const max = Number(input);
-    if (isNaN(max) || max <= 0) return;
-
-    const genderInput = prompt("性別を入力してください（男 / 女）");
-    const g = genderInput === "女" ? "FEMALE" : "MALE";
-
-    for (let i = 1; i <= max; i++) {
-      const exists = members.find((m) => m.number === i);
-      if (exists) continue;
-      await fetch("/api/members", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ number: i, gender: g }),
-      });
-    }
-    setMessage(`${max}名まで一括登録しました`);
-    await fetchMembers();
-  }
-
   function clearImportSelection() {
     setImportFile(null);
     setSheetNames([]);
@@ -189,9 +166,6 @@ export default function MembersPage() {
 
       <div className="flex flex-wrap gap-3">
         <Button onClick={() => setShowAdd(!showAdd)}>+ 部員を追加</Button>
-        <Button variant="outline" onClick={bulkAdd}>
-          番号で一括登録
-        </Button>
         <Button
           variant="outline"
           onClick={() => setShowImport(!showImport)}
