@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -29,11 +29,14 @@ interface Member {
 export default function MembersPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [number, setNumber] = useState("");
   const [gender, setGender] = useState<"MALE" | "FEMALE">("MALE");
   const [grade, setGrade] = useState("");
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchMembers = useCallback(async () => {
     const res = await fetch("/api/members");
@@ -79,9 +82,7 @@ export default function MembersPage() {
     const max = Number(input);
     if (isNaN(max) || max <= 0) return;
 
-    const genderInput = prompt(
-      "性別を入力してください（男 / 女）"
-    );
+    const genderInput = prompt("性別を入力してください（男 / 女）");
     const g = genderInput === "女" ? "FEMALE" : "MALE";
 
     for (let i = 1; i <= max; i++) {
@@ -97,6 +98,39 @@ export default function MembersPage() {
     await fetchMembers();
   }
 
+  async function handleExcelImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setMessage(null);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch("/api/members/import", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage(data.error ?? "インポートに失敗しました");
+      } else {
+        const errNote =
+          data.errors?.length > 0
+            ? `（エラー${data.errors.length}件: ${data.errors[0]}）`
+            : "";
+        setMessage(`${data.message}${errNote}`);
+        await fetchMembers();
+      }
+    } catch {
+      setMessage("通信エラーが発生しました");
+    }
+
+    setImporting(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
   const males = members.filter((m) => m.gender === "MALE");
   const females = members.filter((m) => m.gender === "FEMALE");
 
@@ -109,13 +143,19 @@ export default function MembersPage() {
         </p>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <Button onClick={() => setShowAdd(!showAdd)}>+ 部員を追加</Button>
         <Button variant="outline" onClick={bulkAdd}>
-          一括登録
+          番号で一括登録
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => setShowImport(!showImport)}
+        >
+          Excelからインポート
         </Button>
         {message && (
-          <Badge variant="outline" className="self-center">
+          <Badge variant="outline" className="self-center max-w-md truncate">
             {message}
           </Badge>
         )}
@@ -174,6 +214,57 @@ export default function MembersPage() {
             <Button onClick={addMember} disabled={saving}>
               {saving ? "追加中..." : "追加"}
             </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {showImport && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Excelから部員インポート</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-stone-500">
+              既存の部員はそのまま残します。同じ通し番号がある場合は性別・学年を更新し、
+              ない番号は新規追加します。
+            </p>
+            <div className="bg-stone-50 rounded-md p-3 text-sm text-stone-600 space-y-1">
+              <p className="font-medium text-stone-700">列の形式</p>
+              <p>
+                <code className="bg-white px-1 rounded border">通し番号</code>
+                {" / "}
+                <code className="bg-white px-1 rounded border">性別</code>
+                （男 または 女）
+                {" / "}
+                <code className="bg-white px-1 rounded border">学年</code>
+                （任意・1〜3）
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3 items-center">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  window.location.href = "/api/members/import";
+                }}
+              >
+                テンプレートをダウンロード
+              </Button>
+              <Label
+                htmlFor="member-import-file"
+                className="cursor-pointer inline-flex items-center px-4 py-2 bg-stone-800 text-white hover:bg-stone-700 rounded-md text-sm font-medium transition-colors"
+              >
+                {importing ? "インポート中..." : "Excelファイルを選択"}
+              </Label>
+              <Input
+                id="member-import-file"
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleExcelImport}
+                disabled={importing}
+              />
+            </div>
           </CardContent>
         </Card>
       )}

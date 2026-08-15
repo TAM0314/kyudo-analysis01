@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
 
   if (!number || !gender) {
     return NextResponse.json(
-      { error: "????????????" },
+      { error: "\u901a\u3057\u756a\u53f7\u3068\u6027\u5225\u306f\u5fc5\u9808\u3067\u3059" },
       { status: 400 }
     );
   }
