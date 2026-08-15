@@ -111,6 +111,9 @@ export default function InputPage() {
   );
   const [importType, setImportType] = useState<TournamentType>("PUBLIC");
   const [importMessage, setImportMessage] = useState<string | null>(null);
+  const [importDiagnostics, setImportDiagnostics] = useState<string | null>(
+    null
+  );
   const importFileRef = useRef<HTMLInputElement>(null);
 
   const fetchTournaments = useCallback(async () => {
@@ -260,6 +263,7 @@ export default function InputPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setImportMessage(null);
+    setImportDiagnostics(null);
     setImportFile(file);
     setSheetNames([]);
     setSelectedSheet("");
@@ -293,6 +297,7 @@ export default function InputPage() {
     if (!importFile || !selectedSheet) return;
     setImporting(true);
     setImportMessage(null);
+    setImportDiagnostics(null);
 
     const formData = new FormData();
     formData.append("file", importFile);
@@ -309,12 +314,21 @@ export default function InputPage() {
       const data = await res.json();
       if (!res.ok) {
         setImportMessage(data.error ?? "インポートに失敗しました");
+        setImportDiagnostics(
+          data.diagnosticText ??
+            (data.warnings?.length
+              ? data.warnings.join("\n")
+              : null)
+        );
       } else {
         const warn =
           data.warnings?.length > 0
             ? `（注意${data.warnings.length}件）`
             : "";
         setImportMessage(`${data.message}${warn}`);
+        if (data.warnings?.length) {
+          setImportDiagnostics(data.warnings.join("\n"));
+        }
         clearImport();
         await fetchTournaments();
         await fetchMembers();
@@ -450,17 +464,44 @@ export default function InputPage() {
             )}
 
             {importMessage && (
-              <Badge
-                variant={
+              <div
+                className={`text-sm rounded p-3 ${
                   importMessage.includes("失敗") ||
+                  importMessage.includes("ありません") ||
                   importMessage.includes("エラー")
-                    ? "destructive"
-                    : "default"
-                }
-                className="whitespace-normal max-w-full h-auto py-1"
+                    ? "bg-red-50 text-red-800 border border-red-200"
+                    : "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                }`}
               >
                 {importMessage}
-              </Badge>
+              </div>
+            )}
+            {importDiagnostics && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-stone-700">
+                  診断情報（この内容を共有すると原因特定が早いです）
+                </p>
+                <pre className="text-xs bg-stone-900 text-stone-100 rounded-md p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-80">
+                  {importDiagnostics}
+                </pre>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(importDiagnostics);
+                      setImportMessage(
+                        (importMessage ?? "") + "（診断情報をコピーしました）"
+                      );
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                >
+                  診断情報をコピー
+                </Button>
+              </div>
             )}
           </CardContent>
         )}

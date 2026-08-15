@@ -3,18 +3,57 @@ import type { Gender, ShotResult } from "@/generated/prisma/client";
 export type ParsedShot = ShotResult;
 
 export interface ParsedArcherRow {
-  tachiLabel: string; // 女D など
-  positionInTachi: number; // 1-5
+  tachiLabel: string;
+  positionInTachi: number;
   memberNumber: number;
   gender: Gender;
-  round1: (ParsedShot | null)[]; // length 4
-  round2: (ParsedShot | null)[]; // length 4
+  round1: (ParsedShot | null)[];
+  round2: (ParsedShot | null)[];
+}
+
+export interface ParseDiagnostics {
+  sheetRows: number;
+  sheetColsMax: number;
+  titleHint: string | null;
+  headerRow: number | null; // 1-based for display
+  numberCol: number | null; // 1-based letter-ish: use 0-based + note
+  genderCol: number | null;
+  tachiCol: number | null;
+  nameColIgnored: number | null;
+  headerRowPreview: string[];
+  subHeaderPreview: string[];
+  shotDetectMethod: "subheader_1_2_3_4" | "fallback_layout" | "none";
+  round1Cols: number[]; // 0-based
+  round2Cols: number[];
+  scannedRows: number;
+  acceptedRows: number;
+  skipCounts: {
+    noNumber: number;
+    invalidNumber: number;
+    noTachi: number;
+    noGender: number;
+    noShots: number;
+    headerRepeat: number;
+  };
+  stoppedAtFinalsRow: number | null; // 1-based
+  sampleDataRows: Array<{
+    excelRow: number;
+    tachi: string;
+    numberRaw: string;
+    genderRaw: string;
+    round1Raw: string[];
+    round2Raw: string[];
+    skipReason: string | null;
+  }>;
+  likelyCause: string | null;
+  warnings: string[];
 }
 
 export interface ParseTournamentExcelResult {
   titleHint: string | null;
   rows: ParsedArcherRow[];
   warnings: string[];
+  diagnostics: ParseDiagnostics;
 }
 
 const PRIVACY_HEADERS = /^(氏名|名前|name)$/i;
@@ -22,6 +61,18 @@ const PRIVACY_HEADERS = /^(氏名|名前|name)$/i;
 function cellStr(v: unknown): string {
   if (v === undefined || v === null) return "";
   return String(v).trim();
+}
+
+function colLabel(i: number): string {
+  // 0 -> A, 1 -> B ...
+  let n = i + 1;
+  let s = "";
+  while (n > 0) {
+    const m = (n - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
 }
 
 function normalizeTachi(s: string): string {
@@ -32,7 +83,7 @@ export function parseShotCell(v: unknown): ParsedShot | null {
   const s = cellStr(v);
   if (!s) return null;
   if (s === "\u25cb" || s === "\u25ef" || s === "\u25ce" || s === "\u3007") {
-    return "HIT"; // ○ ◯ ◎ 〇
+    return "HIT";
   }
   if (
     s === "\u00d7" ||
@@ -63,6 +114,67 @@ function hasShots(shots: (ParsedShot | null)[]): boolean {
   return shots.some((s) => s !== null);
 }
 
+function emptyDiagnostics(
+  partial: Partial<ParseDiagnostics> & {
+    sheetRows: number;
+    sheetColsMax: number;
+  }
+): ParseDiagnostics {
+  return {
+    titleHint: null,
+    headerRow: null,
+    numberCol: null,
+    genderCol: null,
+    tachiCol: null,
+    nameColIgnored: null,
+    headerRowPreview: [],
+    subHeaderPreview: [],
+    shotDetectMethod: "none",
+    round1Cols: [],
+    round2Cols: [],
+    scannedRows: 0,
+    acceptedRows: 0,
+    skipCounts: {
+      noNumber: 0,
+      invalidNumber: 0,
+      noTachi: 0,
+      noGender: 0,
+      noShots: 0,
+      headerRepeat: 0,
+    },
+    stoppedAtFinalsRow: null,
+    sampleDataRows: [],
+    likelyCause: null,
+    warnings: [],
+    ...partial,
+  };
+}
+
+function inferLikelyCause(d: ParseDiagnostics): string {
+  if (d.headerRow == null || d.numberCol == null) {
+    return "\u898b\u51fa\u3057\u884c\u306b\u300c\u756a\u53f7\u300d\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3002\u9078\u3093\u3060\u30b7\u30fc\u30c8\u304c\u9055\u3046\u304b\u3001\u5217\u540d\u304c\u300c\u756a\u53f7\u300d\u4ee5\u5916\uff08\u4f8b: No.\u30fb\u90e8\u54e1\u756a\u53f7\uff09\u306e\u53ef\u80fd\u6027\u304c\u3042\u308a\u307e\u3059\u3002";
+  }
+  if (d.skipCounts.noShots > 0 && d.acceptedRows === 0) {
+    return `\u756a\u53f7\u306f\u8aad\u3081\u307e\u3057\u305f\u304c\u3001\u5c04\u5217\uff08\u4e88\u60f3: ${d.round1Cols.map(colLabel).join(",")}\u3068${d.round2Cols.map(colLabel).join(",")}\uff09\u306b\u25cb\u00d7\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3002\u5217\u4f4d\u7f6e\u305a\u308c\u3001\u307e\u305f\u306f\u25cb\u00d7\u304c\u56f3\u5f62\u30fb\u753b\u50cf\u306e\u53ef\u80fd\u6027\u304c\u9ad8\u3044\u3067\u3059\u3002`;
+  }
+  if (d.skipCounts.noTachi > 0 && d.acceptedRows === 0) {
+    return "\u7acb\u9806\u5217\u304c\u7a7a\u306e\u305f\u3081\u5168\u884c\u30b9\u30ad\u30c3\u30d7\u3055\u308c\u307e\u3057\u305f\u3002\u7d50\u5408\u30bb\u30eb\u306e\u8aad\u307f\u53d6\u308a\u5931\u6557\u306e\u53ef\u80fd\u6027\u304c\u3042\u308a\u307e\u3059\u3002";
+  }
+  if (d.skipCounts.noGender > 0 && d.acceptedRows === 0) {
+    return "\u6027\u5225\u304c\u5224\u5225\u3067\u304d\u305a\u5168\u884c\u30b9\u30ad\u30c3\u30d7\u3055\u308c\u307e\u3057\u305f\u3002";
+  }
+  if (d.skipCounts.invalidNumber > 0 && d.acceptedRows === 0) {
+    return "\u756a\u53f7\u5217\u306b\u6570\u5024\u3068\u3057\u3066\u8aad\u3081\u308b\u5024\u304c\u3042\u308a\u307e\u305b\u3093\u3067\u3057\u305f\u3002";
+  }
+  if (d.stoppedAtFinalsRow != null && d.acceptedRows === 0) {
+    return `\u884c${d.stoppedAtFinalsRow}\u3067\u6c7a\u52dd\u95a2\u9023\u306e\u6587\u8a00\u3092\u691c\u77e5\u3057\u3001\u305d\u306e\u524d\u306b\u6709\u52b9\u884c\u304c\u3042\u308a\u307e\u305b\u3093\u3067\u3057\u305f\u3002`;
+  }
+  if (d.acceptedRows === 0) {
+    return "\u6709\u52b9\u306a\u90e8\u54e1\u884c\u3092\u4e00\u884c\u3082\u53d6\u308c\u307e\u305b\u3093\u3067\u3057\u305f\u3002\u4e0b\u8a18\u306e\u8a3a\u65ad\u60c5\u5831\u30fb\u30b5\u30f3\u30d7\u30eb\u3092\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\u3002";
+  }
+  return "";
+}
+
 /**
  * Parse kyudo match-result Excel (立順 / 番号 / 性別 / 1回目4射 / 2回目4射).
  * Ignores 氏名 and 決勝射詰め section.
@@ -72,8 +184,12 @@ export function parseTournamentResultSheet(
 ): ParseTournamentExcelResult {
   const warnings: string[] = [];
   let titleHint: string | null = null;
+  const sheetRows = aoa.length;
+  const sheetColsMax = aoa.reduce(
+    (m, row) => Math.max(m, (row ?? []).length),
+    0
+  );
 
-  // Title hint from early rows
   for (let r = 0; r < Math.min(5, aoa.length); r++) {
     const joined = (aoa[r] ?? []).map(cellStr).filter(Boolean).join(" ");
     if (joined.includes("\u6c7a\u52dd\u5c04\u8a70\u3081")) break;
@@ -87,7 +203,6 @@ export function parseTournamentResultSheet(
     }
   }
 
-  // Find header row with 番号
   let headerRow = -1;
   let numberCol = -1;
   let genderCol = -1;
@@ -115,22 +230,52 @@ export function parseTournamentResultSheet(
   }
 
   if (headerRow < 0 || numberCol < 0) {
-    return {
+    // Collect nearby header-like cells for diagnosis
+    const previewRows: string[] = [];
+    for (let r = 0; r < Math.min(8, aoa.length); r++) {
+      const cells = (aoa[r] ?? [])
+        .slice(0, 15)
+        .map((v, i) => `${colLabel(i)}:${cellStr(v) || "-"}`)
+        .filter((x) => !x.endsWith(":-"));
+      if (cells.length) previewRows.push(`R${r + 1} ${cells.join(" | ")}`);
+    }
+    const diagnostics = emptyDiagnostics({
+      sheetRows,
+      sheetColsMax,
       titleHint,
-      rows: [],
+      headerRowPreview: previewRows,
       warnings: [
         "\u300c\u756a\u53f7\u300d\u5217\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3002\u5927\u4f1a\u7d50\u679c\u5f62\u5f0f\u306eExcel\u304b\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044",
       ],
-    };
+    });
+    diagnostics.likelyCause = inferLikelyCause(diagnostics);
+    diagnostics.warnings = warnings.concat(diagnostics.warnings);
+    return { titleHint, rows: [], warnings: diagnostics.warnings, diagnostics };
   }
 
-  if (tachiCol < 0) tachiCol = 0;
-  if (genderCol < 0) genderCol = numberCol + 1;
+  if (tachiCol < 0) {
+    tachiCol = 0;
+    warnings.push(
+      "\u300c\u7acb\u9806\u300d\u5217\u304c\u898b\u3064\u304b\u3089\u306a\u3044\u305f\u3081 A\u5217\u3092\u7acb\u9806\u3068\u4eee\u5b9a\u3057\u307e\u3057\u305f"
+    );
+  }
+  if (genderCol < 0) {
+    genderCol = numberCol + 1;
+    warnings.push(
+      "\u300c\u6027\u5225\u300d\u5217\u304c\u898b\u3064\u304b\u3089\u306a\u3044\u305f\u3081\u756a\u53f7\u306e\u53f3\u5217\u3092\u4eee\u5b9a\u3057\u307e\u3057\u305f"
+    );
+  }
 
-  // Detect two groups of 4 shot columns after 性別
-  // Strategy: find subheader "1","2","3","4" sequences; else fixed layout
+  const headerRowPreview = (aoa[headerRow] ?? [])
+    .slice(0, 20)
+    .map((v, i) => `${colLabel(i)}:${cellStr(v) || "-"}`);
+  const subHeaderPreview = (aoa[headerRow + 1] ?? [])
+    .slice(0, 20)
+    .map((v, i) => `${colLabel(i)}:${cellStr(v) || "-"}`);
+
   const sub = aoa[headerRow + 1] ?? [];
   const shotGroups: number[][] = [];
+  let shotDetectMethod: ParseDiagnostics["shotDetectMethod"] = "none";
 
   for (let c = genderCol + 1; c < sub.length - 3; c++) {
     const a = cellStr(sub[c]);
@@ -144,13 +289,15 @@ export function parseTournamentResultSheet(
     }
   }
 
-  // Fallback: gender + 1..4, then skip 2 cols (小計・団体), then +4
-  if (shotGroups.length < 2) {
+  if (shotGroups.length >= 2) {
+    shotDetectMethod = "subheader_1_2_3_4";
+  } else {
     const base = genderCol + 1;
     shotGroups.length = 0;
     shotGroups.push([base, base + 1, base + 2, base + 3]);
     const base2 = base + 6;
     shotGroups.push([base2, base2 + 1, base2 + 2, base2 + 3]);
+    shotDetectMethod = "fallback_layout";
     warnings.push(
       "\u5c04\u5217\u3092\u6a19\u6e96\u30ec\u30a4\u30a2\u30a6\u30c8\uff08\u6027\u5225\u306e\u53f3\uff09\u3067\u89e3\u91c8\u3057\u307e\u3057\u305f"
     );
@@ -162,21 +309,36 @@ export function parseTournamentResultSheet(
   const rows: ParsedArcherRow[] = [];
   let lastTachi = "";
   let lastPos = 0;
+  const skipCounts = {
+    noNumber: 0,
+    invalidNumber: 0,
+    noTachi: 0,
+    noGender: 0,
+    noShots: 0,
+    headerRepeat: 0,
+  };
+  let scannedRows = 0;
+  let stoppedAtFinalsRow: number | null = null;
+  const sampleDataRows: ParseDiagnostics["sampleDataRows"] = [];
 
   for (let r = headerRow + 1; r < aoa.length; r++) {
     const row = aoa[r] ?? [];
     const rowText = row.map(cellStr).join(" ");
 
-    // Stop at 決勝射詰め or similar
     if (
       rowText.includes("\u6c7a\u52dd\u5c04\u8a70\u3081") ||
-      rowText.includes("\u6c7a\u52dd") && rowText.includes("\u5c04")
+      (rowText.includes("\u6c7a\u52dd") && rowText.includes("\u5c04"))
     ) {
+      stoppedAtFinalsRow = r + 1;
       break;
     }
 
-    // Skip pure header continuation
-    if (cellStr(row[numberCol]) === "\u756a\u53f7") continue;
+    if (cellStr(row[numberCol]) === "\u756a\u53f7") {
+      skipCounts.headerRepeat++;
+      continue;
+    }
+
+    scannedRows++;
 
     let tachiRaw = cellStr(row[tachiCol]);
     if (tachiRaw) {
@@ -184,16 +346,45 @@ export function parseTournamentResultSheet(
       lastPos = 0;
     }
 
-    // Never use name column
-    void nameCol;
-
     const numberRaw = cellStr(row[numberCol]);
-    if (!numberRaw) continue;
-    // skip if number cell is not numeric (subheader leftovers)
-    const memberNumber = Number(String(numberRaw).replace(/[^\d]/g, ""));
-    if (!memberNumber || isNaN(memberNumber)) continue;
+    const genderRaw = cellStr(row[genderCol]);
+    const round1Raw = round1Cols.map((ci) => cellStr(row[ci]));
+    const round2Raw = round2Cols.map((ci) => cellStr(row[ci]));
 
-    // position: prefer explicit 1-5 col (usually tachiCol+1)
+    const pushSample = (skipReason: string | null) => {
+      if (sampleDataRows.length >= 8) return;
+      // Prefer rows that look like data (have number-ish or any shot-looking cell)
+      if (
+        !numberRaw &&
+        !round1Raw.some(Boolean) &&
+        !round2Raw.some(Boolean) &&
+        sampleDataRows.length >= 3
+      ) {
+        return;
+      }
+      sampleDataRows.push({
+        excelRow: r + 1,
+        tachi: lastTachi || tachiRaw || "(empty)",
+        numberRaw: numberRaw || "(empty)",
+        genderRaw: genderRaw || "(empty)",
+        round1Raw,
+        round2Raw,
+        skipReason,
+      });
+    };
+
+    if (!numberRaw) {
+      skipCounts.noNumber++;
+      continue;
+    }
+
+    const memberNumber = Number(String(numberRaw).replace(/[^\d]/g, ""));
+    if (!memberNumber || isNaN(memberNumber)) {
+      skipCounts.invalidNumber++;
+      pushSample("invalidNumber");
+      continue;
+    }
+
     let pos = Number(cellStr(row[tachiCol + 1]));
     if (!pos || pos < 1 || pos > 20) {
       lastPos += 1;
@@ -203,17 +394,21 @@ export function parseTournamentResultSheet(
     }
 
     if (!lastTachi) {
+      skipCounts.noTachi++;
       warnings.push(
         `${r + 1}\u884c\u76ee: \u7acb\u9806\u304c\u7a7a\u306e\u305f\u3081\u30b9\u30ad\u30c3\u30d7 (No.${memberNumber})`
       );
+      pushSample("noTachi");
       continue;
     }
 
     const gender = parseGender(row[genderCol], lastTachi);
     if (!gender) {
+      skipCounts.noGender++;
       warnings.push(
         `${r + 1}\u884c\u76ee: \u6027\u5225\u304c\u5224\u5225\u3067\u304d\u307e\u305b\u3093 (No.${memberNumber})`
       );
+      pushSample("noGender");
       continue;
     }
 
@@ -221,10 +416,12 @@ export function parseTournamentResultSheet(
     const round2 = round2Cols.map((ci) => parseShotCell(row[ci]));
 
     if (!hasShots(round1) && !hasShots(round2)) {
-      // empty placeholder row
+      skipCounts.noShots++;
+      pushSample("noShots");
       continue;
     }
 
+    pushSample(null);
     rows.push({
       tachiLabel: lastTachi,
       positionInTachi: pos,
@@ -236,8 +433,90 @@ export function parseTournamentResultSheet(
   }
 
   if (rows.length === 0) {
-    warnings.push("\u53d6\u308a\u8fbc\u3081\u308b\u90e8\u54e1\u884c\u304c\u3042\u308a\u307e\u305b\u3093\u3067\u3057\u305f");
+    warnings.push(
+      "\u53d6\u308a\u8fbc\u3081\u308b\u90e8\u54e1\u884c\u304c\u3042\u308a\u307e\u305b\u3093\u3067\u3057\u305f"
+    );
   }
 
-  return { titleHint, rows, warnings };
+  const diagnostics: ParseDiagnostics = {
+    sheetRows,
+    sheetColsMax,
+    titleHint,
+    headerRow: headerRow + 1,
+    numberCol,
+    genderCol,
+    tachiCol,
+    nameColIgnored: nameCol >= 0 ? nameCol : null,
+    headerRowPreview,
+    subHeaderPreview,
+    shotDetectMethod,
+    round1Cols,
+    round2Cols,
+    scannedRows,
+    acceptedRows: rows.length,
+    skipCounts,
+    stoppedAtFinalsRow,
+    sampleDataRows,
+    likelyCause: null,
+    warnings: [...warnings],
+  };
+  diagnostics.likelyCause = inferLikelyCause(diagnostics) || null;
+
+  return { titleHint, rows, warnings, diagnostics };
+}
+
+/** Human-readable diagnostic text for UI */
+export function formatParseDiagnostics(d: ParseDiagnostics): string {
+  const lines: string[] = [];
+  lines.push("=== \u30a4\u30f3\u30dd\u30fc\u30c8\u8a3a\u65ad ===");
+  if (d.likelyCause) {
+    lines.push(`\u63a8\u5b9a\u539f\u56e0: ${d.likelyCause}`);
+    lines.push("");
+  }
+  lines.push(
+    `\u30b7\u30fc\u30c8\u898f\u6a21: ${d.sheetRows}\u884c x \u6700\u5927${d.sheetColsMax}\u5217`
+  );
+  lines.push(`\u898b\u51fa\u3057\u884c: ${d.headerRow ?? "\u672a\u691c\u51fa"}`);
+  lines.push(
+    `\u5217: \u7acb\u9806=${d.tachiCol != null ? colLabel(d.tachiCol) : "-"} / \u756a\u53f7=${d.numberCol != null ? colLabel(d.numberCol) : "-"} / \u6027\u5225=${d.genderCol != null ? colLabel(d.genderCol) : "-"} / \u6c0f\u540d(\u7121\u8996)=${d.nameColIgnored != null ? colLabel(d.nameColIgnored) : "-"}`
+  );
+  lines.push(
+    `\u5c04\u5217\u691c\u51fa: ${d.shotDetectMethod} / 1\u56de\u76ee=[${d.round1Cols.map(colLabel).join(",")}] / 2\u56de\u76ee=[${d.round2Cols.map(colLabel).join(",")}]`
+  );
+  lines.push(
+    `\u30b9\u30ad\u30e3\u30f3: ${d.scannedRows}\u884c / \u63a1\u7528: ${d.acceptedRows}\u884c`
+  );
+  lines.push(
+    `\u30b9\u30ad\u30c3\u30d7: \u756a\u53f7\u7a7a=${d.skipCounts.noNumber}, \u756a\u53f7\u7121\u52b9=${d.skipCounts.invalidNumber}, \u7acb\u9806\u7a7a=${d.skipCounts.noTachi}, \u6027\u5225\u4e0d\u660e=${d.skipCounts.noGender}, \u25cb\u00d7\u306a\u3057=${d.skipCounts.noShots}`
+  );
+  if (d.stoppedAtFinalsRow != null) {
+    lines.push(
+      `\u6c7a\u52dd\u95a2\u9023\u3067\u505c\u6b62: ${d.stoppedAtFinalsRow}\u884c\u76ee`
+    );
+  }
+  if (d.titleHint) lines.push(`\u898b\u51fa\u3057\u5019\u88dc: ${d.titleHint}`);
+  if (d.headerRowPreview.length) {
+    lines.push("");
+    lines.push("[\u898b\u51fa\u3057\u884c]");
+    lines.push(d.headerRowPreview.join(" | "));
+  }
+  if (d.subHeaderPreview.length) {
+    lines.push("[\u6b21\u884c]");
+    lines.push(d.subHeaderPreview.join(" | "));
+  }
+  if (d.sampleDataRows.length) {
+    lines.push("");
+    lines.push("[\u30b5\u30f3\u30d7\u30eb\u884c]");
+    for (const s of d.sampleDataRows) {
+      lines.push(
+        `R${s.excelRow} tachi=${s.tachi} no=${s.numberRaw} sex=${s.genderRaw} r1=[${s.round1Raw.join(",")}] r2=[${s.round2Raw.join(",")}]${s.skipReason ? ` SKIP:${s.skipReason}` : " OK"}`
+      );
+    }
+  }
+  if (d.warnings.length) {
+    lines.push("");
+    lines.push("[\u8b66\u544a]");
+    for (const w of d.warnings.slice(0, 20)) lines.push(`- ${w}`);
+  }
+  return lines.join("\n");
 }

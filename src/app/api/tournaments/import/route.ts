@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import * as XLSX from "xlsx";
 import { TournamentType } from "@/generated/prisma/client";
-import { parseTournamentResultSheet } from "@/lib/tournament-excel";
+import { parseTournamentResultSheet, formatParseDiagnostics } from "@/lib/tournament-excel";
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
@@ -64,6 +64,9 @@ export async function POST(req: NextRequest) {
           "\u53d6\u308a\u8fbc\u3081\u308b\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093",
         warnings: parsed.warnings,
         titleHint: parsed.titleHint,
+        diagnostics: parsed.diagnostics,
+        diagnosticText: formatParseDiagnostics(parsed.diagnostics),
+        sheetName,
       },
       { status: 400 }
     );
