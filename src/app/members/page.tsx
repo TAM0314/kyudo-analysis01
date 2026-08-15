@@ -139,7 +139,7 @@ export default function MembersPage() {
       <div>
         <h1 className="text-2xl font-bold text-stone-800">部員管理</h1>
         <p className="text-stone-500 text-sm mt-1">
-          部員の通し番号・性別・学年を管理します
+          部員の番号・性別・学年を管理します
         </p>
       </div>
 
@@ -169,7 +169,7 @@ export default function MembersPage() {
           <CardContent className="space-y-3">
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <Label>通し番号</Label>
+                <Label>番号</Label>
                 <Input
                   type="number"
                   value={number}
@@ -225,19 +225,23 @@ export default function MembersPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-stone-500">
-              既存の部員はそのまま残します。同じ通し番号がある場合は性別・学年を更新し、
-              ない番号は新規追加します。
+              既存の部員はそのまま残します。同じ番号がある場合は性別・学年を更新し、
+              ない番号は新規追加します。A列の氏名など個人情報は読み込みません。
             </p>
             <div className="bg-stone-50 rounded-md p-3 text-sm text-stone-600 space-y-1">
-              <p className="font-medium text-stone-700">列の形式</p>
+              <p className="font-medium text-stone-700">読み込む列</p>
               <p>
-                <code className="bg-white px-1 rounded border">通し番号</code>
+                <code className="bg-white px-1 rounded border">番号</code>
+                （または通し番号）
                 {" / "}
                 <code className="bg-white px-1 rounded border">性別</code>
                 （男 または 女）
                 {" / "}
                 <code className="bg-white px-1 rounded border">学年</code>
                 （任意・1〜3）
+              </p>
+              <p className="text-xs text-stone-400">
+                ※ 氏名列があっても参照・保存しません
               </p>
             </div>
             <div className="flex flex-wrap gap-3 items-center">

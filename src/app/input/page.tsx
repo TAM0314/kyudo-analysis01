@@ -390,7 +390,7 @@ export default function InputPage() {
                 <thead>
                   <tr className="border-b">
                     <th className="text-left py-2 pr-3 font-medium text-stone-600 w-24">
-                      部員番号
+                      番号
                     </th>
                     {[1, 2, 3, 4].map((n) => (
                       <th
