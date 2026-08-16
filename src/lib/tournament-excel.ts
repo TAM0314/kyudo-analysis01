@@ -79,6 +79,14 @@ function normalizeTachi(s: string): string {
   return s.replace(/\s+/g, "");
 }
 
+/** 女D / 男A など。純数字は暫定番号とみなし立順にしない */
+function isValidTachiLabel(s: string): boolean {
+  const n = normalizeTachi(s);
+  if (!n) return false;
+  if (/^\d+$/.test(n)) return false;
+  return true;
+}
+
 export function parseShotCell(v: unknown): ParsedShot | null {
   const s = cellStr(v);
   if (!s) return null;
@@ -309,6 +317,11 @@ export function parseTournamentResultSheet(
   const rows: ParsedArcherRow[] = [];
   let lastTachi = "";
   let lastPos = 0;
+  let autoTachiIndex = 0;
+  let autoCountInGroup = 0;
+  let activeAuto = false;
+  let usedAutoTachi = false;
+  const AUTO_GROUP_SIZE = 5;
   const skipCounts = {
     noNumber: 0,
     invalidNumber: 0,
@@ -340,10 +353,12 @@ export function parseTournamentResultSheet(
 
     scannedRows++;
 
-    let tachiRaw = cellStr(row[tachiCol]);
-    if (tachiRaw) {
+    const tachiRaw = cellStr(row[tachiCol]);
+    if (tachiRaw && isValidTachiLabel(tachiRaw)) {
       lastTachi = normalizeTachi(tachiRaw);
       lastPos = 0;
+      activeAuto = false;
+      autoCountInGroup = 0;
     }
 
     const numberRaw = cellStr(row[numberCol]);
@@ -351,9 +366,8 @@ export function parseTournamentResultSheet(
     const round1Raw = round1Cols.map((ci) => cellStr(row[ci]));
     const round2Raw = round2Cols.map((ci) => cellStr(row[ci]));
 
-    const pushSample = (skipReason: string | null) => {
+    const pushSample = (skipReason: string | null, tachiForSample?: string) => {
       if (sampleDataRows.length >= 8) return;
-      // Prefer rows that look like data (have number-ish or any shot-looking cell)
       if (
         !numberRaw &&
         !round1Raw.some(Boolean) &&
@@ -364,7 +378,7 @@ export function parseTournamentResultSheet(
       }
       sampleDataRows.push({
         excelRow: r + 1,
-        tachi: lastTachi || tachiRaw || "(empty)",
+        tachi: tachiForSample || lastTachi || tachiRaw || "(empty)",
         numberRaw: numberRaw || "(empty)",
         genderRaw: genderRaw || "(empty)",
         round1Raw,
@@ -385,21 +399,35 @@ export function parseTournamentResultSheet(
       continue;
     }
 
+    const round1 = round1Cols.map((ci) => parseShotCell(row[ci]));
+    const round2 = round2Cols.map((ci) => parseShotCell(row[ci]));
+
+    if (!hasShots(round1) && !hasShots(round2)) {
+      skipCounts.noShots++;
+      pushSample("noShots");
+      continue;
+    }
+
+    // 立順が空 / 純数字のみ → 5人ごとに自動ラベル（A列空白・暫定番号対応）
+    if (!lastTachi) {
+      autoTachiIndex += 1;
+      lastTachi = `\u7acb${autoTachiIndex}`;
+      activeAuto = true;
+      autoCountInGroup = 0;
+      usedAutoTachi = true;
+      skipCounts.noTachi++;
+    }
+
     let pos = Number(cellStr(row[tachiCol + 1]));
-    if (!pos || pos < 1 || pos > 20) {
+    if (activeAuto) {
+      autoCountInGroup += 1;
+      pos = autoCountInGroup;
+      lastPos = pos;
+    } else if (!pos || pos < 1 || pos > 20) {
       lastPos += 1;
       pos = lastPos;
     } else {
       lastPos = pos;
-    }
-
-    if (!lastTachi) {
-      skipCounts.noTachi++;
-      warnings.push(
-        `${r + 1}\u884c\u76ee: \u7acb\u9806\u304c\u7a7a\u306e\u305f\u3081\u30b9\u30ad\u30c3\u30d7 (No.${memberNumber})`
-      );
-      pushSample("noTachi");
-      continue;
     }
 
     const gender = parseGender(row[genderCol], lastTachi);
@@ -412,15 +440,6 @@ export function parseTournamentResultSheet(
       continue;
     }
 
-    const round1 = round1Cols.map((ci) => parseShotCell(row[ci]));
-    const round2 = round2Cols.map((ci) => parseShotCell(row[ci]));
-
-    if (!hasShots(round1) && !hasShots(round2)) {
-      skipCounts.noShots++;
-      pushSample("noShots");
-      continue;
-    }
-
     pushSample(null);
     rows.push({
       tachiLabel: lastTachi,
@@ -430,6 +449,19 @@ export function parseTournamentResultSheet(
       round1,
       round2,
     });
+
+    if (activeAuto && autoCountInGroup >= AUTO_GROUP_SIZE) {
+      lastTachi = "";
+      activeAuto = false;
+      autoCountInGroup = 0;
+      lastPos = 0;
+    }
+  }
+
+  if (usedAutoTachi) {
+    warnings.push(
+      "\u7acb\u9806\u304c\u7a7a\uff08\u307e\u305f\u306fA\u5217\u306e\u7d14\u6570\u5b57\uff09\u3060\u3063\u305f\u305f\u3081\u3001\u81ea\u52d5\u30e9\u30d9\u30eb\uff08\u7acb1, \u7acb2\u2026\uff09\u3092\u4ed8\u4e0e\u3057\u307e\u3057\u305f"
+    );
   }
 
   if (rows.length === 0) {
@@ -487,7 +519,7 @@ export function formatParseDiagnostics(d: ParseDiagnostics): string {
     `\u30b9\u30ad\u30e3\u30f3: ${d.scannedRows}\u884c / \u63a1\u7528: ${d.acceptedRows}\u884c`
   );
   lines.push(
-    `\u30b9\u30ad\u30c3\u30d7: \u756a\u53f7\u7a7a=${d.skipCounts.noNumber}, \u756a\u53f7\u7121\u52b9=${d.skipCounts.invalidNumber}, \u7acb\u9806\u7a7a=${d.skipCounts.noTachi}, \u6027\u5225\u4e0d\u660e=${d.skipCounts.noGender}, \u25cb\u00d7\u306a\u3057=${d.skipCounts.noShots}`
+    `\u30b9\u30ad\u30c3\u30d7: \u756a\u53f7\u7a7a=${d.skipCounts.noNumber}, \u756a\u53f7\u7121\u52b9=${d.skipCounts.invalidNumber}, \u7acb\u9806\u81ea\u52d5=${d.skipCounts.noTachi}, \u6027\u5225\u4e0d\u660e=${d.skipCounts.noGender}, \u25cb\u00d7\u306a\u3057=${d.skipCounts.noShots}`
   );
   if (d.stoppedAtFinalsRow != null) {
     lines.push(

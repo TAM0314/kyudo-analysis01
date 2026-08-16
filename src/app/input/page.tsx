@@ -368,6 +368,7 @@ export default function InputPage() {
           <CardContent className="space-y-4">
             <p className="text-sm text-stone-500">
               立順・番号・性別・1回目/2回目の○×を読み込みます。氏名は読みません。
+              立順（A列）が空でも取り込めます（自動で「立1」「立2」…を付与）。
               未登録の番号は部員として自動追加し、決勝射詰めは無視します。
             </p>
 
