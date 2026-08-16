@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { streamText } from "ai";
 import { openai } from "@ai-sdk/openai";
 
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json(

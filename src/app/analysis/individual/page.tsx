@@ -30,7 +30,7 @@ import {
   Cell,
 } from "recharts";
 import { tournamentTypeLabel } from "@/lib/utils";
-import { useCompletion } from "@ai-sdk/react";
+import { streamAiCoachComment } from "@/lib/ai-coach";
 
 interface Member {
   id: number;
@@ -64,17 +64,9 @@ export default function IndividualAnalysisPage() {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [arrowStats, setArrowStats] = useState<ArrowStat[]>([]);
   const [loading, setLoading] = useState(false);
-
+  const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-
-  const { completion, complete, isLoading: aiLoading, error: completionError } =
-    useCompletion({
-      api: "/api/analysis/ai",
-      streamProtocol: "text",
-      onError: (err) => {
-        setAiError(err.message || "AI分析に失敗しました");
-      },
-    });
+  const [completion, setCompletion] = useState("");
 
   useEffect(() => {
     fetch("/api/members")
@@ -106,20 +98,23 @@ export default function IndividualAnalysisPage() {
       return;
     }
     setAiError(null);
+    setCompletion("");
+    setAiLoading(true);
     try {
-      await complete("individual-analysis", {
-        body: {
-          type: "individual",
-          data: {
-            memberNumber: selectedMember.number,
-            gender: selectedMember.gender,
-            chartData,
-            arrowStats,
-          },
+      await streamAiCoachComment({
+        type: "individual",
+        data: {
+          memberNumber: selectedMember.number,
+          gender: selectedMember.gender,
+          chartData,
+          arrowStats,
         },
+        onChunk: setCompletion,
       });
     } catch (e) {
       setAiError(e instanceof Error ? e.message : "AI分析に失敗しました");
+    } finally {
+      setAiLoading(false);
     }
   }
 
@@ -387,10 +382,13 @@ export default function IndividualAnalysisPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {(aiError || completionError) && (
+              {aiError && (
                 <div className="mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">
-                  {aiError || completionError?.message}
+                  {aiError}
                 </div>
+              )}
+              {aiLoading && !completion && (
+                <p className="text-sm text-stone-500 mb-3">AIが分析中です...</p>
               )}
               {completion ? (
                 <div className="bg-stone-50 rounded-md p-4 text-sm text-stone-700 leading-relaxed border">
