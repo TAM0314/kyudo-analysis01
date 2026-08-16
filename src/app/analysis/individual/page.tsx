@@ -29,7 +29,7 @@ import {
   Bar,
   Cell,
 } from "recharts";
-import { tournamentTypeLabel } from "@/lib/utils";
+import { tournamentTypeLabel, formatHitRate, computeHitRatePercent } from "@/lib/utils";
 import { streamAiCoachComment } from "@/lib/ai-coach";
 
 interface Member {
@@ -90,6 +90,11 @@ export default function IndividualAnalysisPage() {
     fetchAnalysis();
   }, [fetchAnalysis]);
 
+  useEffect(() => {
+    setCompletion("");
+    setAiError(null);
+  }, [selectedMemberId]);
+
   const selectedMember = members.find((m) => m.id === selectedMemberId);
 
   async function runAiAnalysis() {
@@ -120,9 +125,7 @@ export default function IndividualAnalysisPage() {
 
   const avgHitRate =
     chartData.length > 0
-      ? Math.round(
-          chartData.reduce((sum, d) => sum + d.hitRate, 0) / chartData.length
-        )
+      ? chartData.reduce((sum, d) => sum + d.hitRate, 0) / chartData.length
       : null;
 
   return (
@@ -201,7 +204,7 @@ export default function IndividualAnalysisPage() {
             <Card>
               <CardContent className="pt-5 text-center">
                 <p className="text-3xl font-bold text-stone-800">
-                  {avgHitRate}%
+                  {formatHitRate(avgHitRate)}
                 </p>
                 <p className="text-sm text-stone-500 mt-1">平均的中率</p>
               </CardContent>
@@ -209,7 +212,7 @@ export default function IndividualAnalysisPage() {
             <Card>
               <CardContent className="pt-5 text-center">
                 <p className="text-3xl font-bold text-stone-800">
-                  {chartData[chartData.length - 1]?.hitRate}%
+                  {formatHitRate(chartData[chartData.length - 1]?.hitRate)}
                 </p>
                 <p className="text-sm text-stone-500 mt-1">直近試合</p>
               </CardContent>
@@ -245,14 +248,14 @@ export default function IndividualAnalysisPage() {
                   />
                   <YAxis
                     domain={[0, 100]}
-                    tickFormatter={(v) => `${v}%`}
+                    tickFormatter={(v) => formatHitRate(v)}
                     tick={{ fontSize: 11 }}
                   />
                   <Tooltip
                     formatter={(value, _name, props) => {
                       const d = props.payload as ChartDataPoint;
                       return [
-                        `${value}%（${d.hits}/${d.total}中）`,
+                        `${formatHitRate(Number(value))}（${d.hits}/${d.total}中）`,
                         "的中率",
                       ];
                     }}
@@ -270,7 +273,7 @@ export default function IndividualAnalysisPage() {
                       stroke="#a8a29e"
                       strokeDasharray="4 4"
                       label={{
-                        value: `平均 ${avgHitRate}%`,
+                        value: `平均 ${formatHitRate(avgHitRate)}`,
                         fill: "#a8a29e",
                         fontSize: 11,
                         position: "right",
@@ -309,30 +312,29 @@ export default function IndividualAnalysisPage() {
                   />
                   <YAxis
                     domain={[0, 100]}
-                    tickFormatter={(v) => `${v}%`}
+                    tickFormatter={(v) => formatHitRate(v)}
                     tick={{ fontSize: 11 }}
                   />
                   <Tooltip
                     formatter={(_, __, props) => {
                       const d = props.payload as ArrowStat;
-                      const rate =
-                        d.total > 0
-                          ? Math.round((d.hits / d.total) * 100)
-                          : 0;
-                      return [`${rate}%（${d.hits}/${d.total}中）`, "的中率"];
+                      const rate = computeHitRatePercent(d.hits, d.total);
+                      return [
+                        `${formatHitRate(rate)}（${d.hits}/${d.total}中）`,
+                        "的中率",
+                      ];
                     }}
                     labelFormatter={(v) => `${v}射目`}
                   />
                   <Bar
                     dataKey={(d: ArrowStat) =>
-                      d.total > 0 ? Math.round((d.hits / d.total) * 100) : 0
+                      computeHitRatePercent(d.hits, d.total)
                     }
                     name="的中率"
                     radius={[4, 4, 0, 0]}
                   >
                     {arrowStats.map((d, i) => {
-                      const rate =
-                        d.total > 0 ? Math.round((d.hits / d.total) * 100) : 0;
+                      const rate = computeHitRatePercent(d.hits, d.total);
                       return (
                         <Cell
                           key={i}
@@ -351,12 +353,13 @@ export default function IndividualAnalysisPage() {
               </ResponsiveContainer>
               <div className="flex gap-4 mt-3">
                 {arrowStats.map((d) => {
-                  const rate =
-                    d.total > 0 ? Math.round((d.hits / d.total) * 100) : 0;
+                  const rate = computeHitRatePercent(d.hits, d.total);
                   return (
                     <div key={d.arrowNumber} className="text-center flex-1">
                       <p className="text-xs text-stone-500">{d.arrowNumber}射目</p>
-                      <p className="font-bold text-stone-800">{rate}%</p>
+                      <p className="font-bold text-stone-800">
+                        {formatHitRate(rate)}
+                      </p>
                       <p className="text-xs text-stone-400">
                         {d.hits}/{d.total}中
                       </p>
@@ -447,9 +450,11 @@ function generatePatternComments(
       (a, b) => a.hits / a.total - b.hits / b.total
     )[0];
   if (weakArrow && weakArrow.total > 0) {
-    const rate = Math.round((weakArrow.hits / weakArrow.total) * 100);
+    const rate = computeHitRatePercent(weakArrow.hits, weakArrow.total);
     if (rate < 50) {
-      comments.push(`${weakArrow.arrowNumber}射目が弱点（${rate}%）`);
+      comments.push(
+        `${weakArrow.arrowNumber}射目が弱点（${formatHitRate(rate)}）`
+      );
     }
   }
 
@@ -459,9 +464,11 @@ function generatePatternComments(
       (a, b) => b.hits / b.total - a.hits / a.total
     )[0];
   if (strongArrow && strongArrow.total > 0) {
-    const rate = Math.round((strongArrow.hits / strongArrow.total) * 100);
+    const rate = computeHitRatePercent(strongArrow.hits, strongArrow.total);
     if (rate >= 75) {
-      comments.push(`${strongArrow.arrowNumber}射目が得意（${rate}%）`);
+      comments.push(
+        `${strongArrow.arrowNumber}射目が得意（${formatHitRate(rate)}）`
+      );
     }
   }
 

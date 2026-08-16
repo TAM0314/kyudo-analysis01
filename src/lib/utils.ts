@@ -39,3 +39,15 @@ export function shotResultColor(
   if (result === "SHITSU") return "text-amber-500 font-bold";
   return "text-red-500 font-bold";
 }
+
+/** 的中率（%）を小数第3位まで算出 */
+export function computeHitRatePercent(hits: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.round((hits / total) * 100000) / 1000;
+}
+
+/** 的中率表示: 0%は「0%」、0%超は小数第3位まで */
+export function formatHitRate(rate: number | null | undefined): string {
+  if (rate == null || !Number.isFinite(rate) || rate <= 0) return "0%";
+  return `${Number(rate).toFixed(3)}%`;
+}

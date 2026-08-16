@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { computeHitRatePercent } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -79,7 +80,7 @@ export async function GET(req: NextRequest) {
       name: t.tournamentName,
       date: t.tournamentDate,
       type: t.tournamentType,
-      hitRate: totalShots > 0 ? Math.round((totalHits / totalShots) * 100) : 0,
+      hitRate: computeHitRatePercent(totalHits, totalShots),
       hits: totalHits,
       total: totalShots,
       rounds: t.rounds,

@@ -26,7 +26,12 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-import { tournamentTypeLabel, shotResultLabel, shotResultColor } from "@/lib/utils";
+import {
+  tournamentTypeLabel,
+  shotResultLabel,
+  shotResultColor,
+  formatHitRate,
+} from "@/lib/utils";
 import { streamAiCoachComment } from "@/lib/ai-coach";
 
 interface Tournament {
@@ -88,6 +93,11 @@ export default function TeamAnalysisPage() {
         setTournamentInfo(data.tournament ?? null);
         setLoading(false);
       });
+  }, [selectedId]);
+
+  useEffect(() => {
+    setCompletion("");
+    setAiError(null);
   }, [selectedId]);
 
   async function runAiAnalysis() {
@@ -180,14 +190,14 @@ export default function TeamAnalysisPage() {
                   />
                   <YAxis
                     domain={[0, 100]}
-                    tickFormatter={(v) => `${v}%`}
+                    tickFormatter={(v) => formatHitRate(v)}
                     tick={{ fontSize: 11 }}
                   />
                   <Tooltip
                     formatter={(_, __, props) => {
                       const d = props.payload as RoundStat;
                       return [
-                        `${d.hitRate}%（${d.hits}/${d.total}中）`,
+                        `${formatHitRate(d.hitRate)}（${d.hits}/${d.total}中）`,
                         "的中率",
                       ];
                     }}
@@ -230,14 +240,14 @@ export default function TeamAnalysisPage() {
                   />
                   <YAxis
                     domain={[0, 100]}
-                    tickFormatter={(v) => `${v}%`}
+                    tickFormatter={(v) => formatHitRate(v)}
                     tick={{ fontSize: 11 }}
                   />
                   <Tooltip
                     formatter={(_, __, props) => {
                       const d = props.payload as ArrowStat;
                       return [
-                        `${d.hitRate}%（${d.hits}/${d.total}中）`,
+                        `${formatHitRate(d.hitRate)}（${d.hits}/${d.total}中）`,
                         "的中率",
                       ];
                     }}
@@ -267,7 +277,8 @@ export default function TeamAnalysisPage() {
             <Card key={round.roundId}>
               <CardHeader>
                 <CardTitle className="text-base">
-                  {round.label} — {round.hits}/{round.total}中（{round.hitRate}%）
+                  {round.label} — {round.hits}/{round.total}中（
+                  {formatHitRate(round.hitRate)}）
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -395,7 +406,9 @@ function generateTeamPatternComments(
     .filter((a) => a.total > 0)
     .sort((a, b) => a.hitRate - b.hitRate)[0];
   if (weakArrow && weakArrow.hitRate < 50) {
-    comments.push(`${weakArrow.arrowNumber}射目がチーム全体の弱点（${weakArrow.hitRate}%）`);
+    comments.push(
+      `${weakArrow.arrowNumber}射目がチーム全体の弱点（${formatHitRate(weakArrow.hitRate)}）`
+    );
   }
 
   const overallRate =

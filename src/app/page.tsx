@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { formatDate, tournamentTypeLabel } from "@/lib/utils";
+import { formatDate, tournamentTypeLabel, formatHitRate, computeHitRatePercent } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -119,7 +119,7 @@ export default async function DashboardPage() {
               const hits = allShots.filter((s: any) => s.result === "HIT").length;
               const total = allShots.length;
               const rate =
-                total > 0 ? Math.round((hits / total) * 100) : null;
+                total > 0 ? computeHitRatePercent(hits, total) : null;
 
               return (
                 <Card key={t.id}>
@@ -138,7 +138,7 @@ export default async function DashboardPage() {
                     <div className="text-right">
                       {rate !== null ? (
                         <>
-                          <p className="text-2xl font-bold">{rate}%</p>
+                          <p className="text-2xl font-bold">{formatHitRate(rate)}</p>
                           <p className="text-xs text-stone-400">
                             {hits}/{total}中
                           </p>

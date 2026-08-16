@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
+import { formatHitRate } from "@/lib/utils";
 
 export const maxDuration = 60;
 
@@ -62,7 +63,10 @@ export async function POST(req: NextRequest) {
     const genderLabel =
       gender === "MALE" ? "\u7537" : gender === "FEMALE" ? "\u5973" : gender;
     const recentData = chartData
-      .map((d) => `${d.name}: ${d.hits}/${d.total}\u4e2d (${d.hitRate}%)`)
+      .map(
+        (d) =>
+          `${d.name}: ${d.hits}/${d.total}\u4e2d (${formatHitRate(d.hitRate)})`
+      )
       .join("\n");
     const arrowData = arrowStats
       .map((a) => `${a.arrowNumber}\u5c04\u76ee: ${a.hits}/${a.total}\u4e2d`)
@@ -98,12 +102,15 @@ export async function POST(req: NextRequest) {
     }>;
 
     const roundData = roundStats
-      .map((r) => `${r.label}: ${r.hits}/${r.total}\u4e2d (${r.hitRate}%)`)
+      .map(
+        (r) =>
+          `${r.label}: ${r.hits}/${r.total}\u4e2d (${formatHitRate(r.hitRate)})`
+      )
       .join("\n");
     const arrowData = arrowStats
       .map(
         (a) =>
-          `${a.arrowNumber}\u5c04\u76ee: ${a.hits}/${a.total}\u4e2d (${a.hitRate}%)`
+          `${a.arrowNumber}\u5c04\u76ee: ${a.hits}/${a.total}\u4e2d (${formatHitRate(a.hitRate)})`
       )
       .join("\n");
 

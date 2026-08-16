@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { computeHitRatePercent } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -54,7 +55,7 @@ export async function GET(req: NextRequest) {
       label: round.label ?? `${round.roundNumber}???`,
       hits,
       total,
-      hitRate: total > 0 ? Math.round((hits / total) * 100) : 0,
+      hitRate: computeHitRatePercent(hits, total),
       memberResults,
     };
   });
@@ -69,7 +70,7 @@ export async function GET(req: NextRequest) {
       arrowNumber: n,
       hits,
       total: all.length,
-      hitRate: all.length > 0 ? Math.round((hits / all.length) * 100) : 0,
+      hitRate: computeHitRatePercent(hits, all.length),
     };
   });
 
