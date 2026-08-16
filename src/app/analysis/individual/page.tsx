@@ -67,12 +67,14 @@ export default function IndividualAnalysisPage() {
 
   const [aiError, setAiError] = useState<string | null>(null);
 
-  const { completion, complete, isLoading: aiLoading } = useCompletion({
-    api: "/api/analysis/ai",
-    onError: (err) => {
-      setAiError(err.message || "AI分析に失敗しました");
-    },
-  });
+  const { completion, complete, isLoading: aiLoading, error: completionError } =
+    useCompletion({
+      api: "/api/analysis/ai",
+      streamProtocol: "text",
+      onError: (err) => {
+        setAiError(err.message || "AI分析に失敗しました");
+      },
+    });
 
   useEffect(() => {
     fetch("/api/members")
@@ -99,19 +101,26 @@ export default function IndividualAnalysisPage() {
   const selectedMember = members.find((m) => m.id === selectedMemberId);
 
   async function runAiAnalysis() {
-    if (!selectedMember || chartData.length === 0) return;
+    if (!selectedMember || chartData.length === 0) {
+      setAiError("部員を選び、的中データがある状態で実行してください");
+      return;
+    }
     setAiError(null);
-    await complete("", {
-      body: {
-        type: "individual",
-        data: {
-          memberNumber: selectedMember.number,
-          gender: selectedMember.gender,
-          chartData,
-          arrowStats,
+    try {
+      await complete("individual-analysis", {
+        body: {
+          type: "individual",
+          data: {
+            memberNumber: selectedMember.number,
+            gender: selectedMember.gender,
+            chartData,
+            arrowStats,
+          },
         },
-      },
-    });
+      });
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "AI分析に失敗しました");
+    }
   }
 
   const avgHitRate =
@@ -378,9 +387,9 @@ export default function IndividualAnalysisPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {aiError && (
+              {(aiError || completionError) && (
                 <div className="mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">
-                  {aiError}
+                  {aiError || completionError?.message}
                 </div>
               )}
               {completion ? (

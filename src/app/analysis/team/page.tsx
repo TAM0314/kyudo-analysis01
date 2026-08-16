@@ -70,12 +70,14 @@ export default function TeamAnalysisPage() {
 
   const [aiError, setAiError] = useState<string | null>(null);
 
-  const { completion, complete, isLoading: aiLoading } = useCompletion({
-    api: "/api/analysis/ai",
-    onError: (err) => {
-      setAiError(err.message || "AI分析に失敗しました");
-    },
-  });
+  const { completion, complete, isLoading: aiLoading, error: completionError } =
+    useCompletion({
+      api: "/api/analysis/ai",
+      streamProtocol: "text",
+      onError: (err) => {
+        setAiError(err.message || "AI分析に失敗しました");
+      },
+    });
 
   useEffect(() => {
     fetch("/api/tournaments")
@@ -97,18 +99,25 @@ export default function TeamAnalysisPage() {
   }, [selectedId]);
 
   async function runAiAnalysis() {
-    if (!tournamentInfo || roundStats.length === 0) return;
+    if (!tournamentInfo || roundStats.length === 0) {
+      setAiError("大会を選び、立ちデータがある状態で実行してください");
+      return;
+    }
     setAiError(null);
-    await complete("", {
-      body: {
-        type: "team",
-        data: {
-          tournamentName: tournamentInfo.name,
-          roundStats,
-          arrowStats,
+    try {
+      await complete("team-analysis", {
+        body: {
+          type: "team",
+          data: {
+            tournamentName: tournamentInfo.name,
+            roundStats,
+            arrowStats,
+          },
         },
-      },
-    });
+      });
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "AI分析に失敗しました");
+    }
   }
 
   return (
@@ -330,9 +339,9 @@ export default function TeamAnalysisPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {aiError && (
+              {(aiError || completionError) && (
                 <div className="mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">
-                  {aiError}
+                  {aiError || completionError?.message}
                 </div>
               )}
               {completion ? (
