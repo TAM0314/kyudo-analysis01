@@ -114,6 +114,10 @@ export default function InputPage() {
   const [importDiagnostics, setImportDiagnostics] = useState<string | null>(
     null
   );
+  const [relabelTournamentId, setRelabelTournamentId] = useState<number | null>(
+    null
+  );
+  const [relabeling, setRelabeling] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
 
   const fetchTournaments = useCallback(async () => {
@@ -316,16 +320,18 @@ export default function InputPage() {
         setImportMessage(data.error ?? "インポートに失敗しました");
         setImportDiagnostics(
           data.diagnosticText ??
-            (data.warnings?.length
-              ? data.warnings.join("\n")
-              : null)
+            (data.warnings?.length ? data.warnings.join("\n") : null)
         );
       } else {
         const warn =
           data.warnings?.length > 0
             ? `（注意${data.warnings.length}件）`
             : "";
-        setImportMessage(`${data.message}${warn}`);
+        const labels =
+          data.tachiLabels?.length > 0
+            ? `／立順: ${data.tachiLabels.join("、")}`
+            : "";
+        setImportMessage(`${data.message}${warn}${labels}`);
         if (data.warnings?.length) {
           setImportDiagnostics(data.warnings.join("\n"));
         }
@@ -341,6 +347,50 @@ export default function InputPage() {
       setImportMessage("通信エラーが発生しました");
     }
     setImporting(false);
+  }
+
+  async function runRelabelFromExcel() {
+    if (!importFile || !selectedSheet || !relabelTournamentId) {
+      setImportMessage("Excel・シート・対象大会を選んでください");
+      return;
+    }
+    setRelabeling(true);
+    setImportMessage(null);
+    setImportDiagnostics(null);
+
+    const formData = new FormData();
+    formData.append("file", importFile);
+    formData.append("sheetName", selectedSheet);
+    formData.append("relabelOnly", "true");
+    formData.append("tournamentId", String(relabelTournamentId));
+
+    try {
+      const res = await fetch("/api/tournaments/import", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setImportMessage(data.error ?? "ラベル更新に失敗しました");
+        setImportDiagnostics(
+          data.diagnosticText ??
+            (data.excelTachis
+              ? `Excel立順: ${data.excelTachis.join("、")}`
+              : null)
+        );
+      } else {
+        setImportMessage(data.message ?? "ラベルを更新しました");
+        if (data.excelTachis?.length) {
+          setImportDiagnostics(`Excel立順: ${data.excelTachis.join("、")}`);
+        }
+        await fetchTournaments();
+        setSelectedTournamentId(relabelTournamentId);
+        setSelectedRoundId(null);
+      }
+    } catch {
+      setImportMessage("通信エラーが発生しました");
+    }
+    setRelabeling(false);
   }
 
   return (
@@ -368,7 +418,8 @@ export default function InputPage() {
           <CardContent className="space-y-4">
             <p className="text-sm text-stone-500">
               立順・番号・性別・1回目/2回目の○×を読み込みます。氏名は読みません。
-              立順（A列）が空でも取り込めます（自動で「立1」「立2」…を付与）。
+              立順は「女D」「男A」などを優先し、結合セルも読み取ります。
+              立順が空のときだけ自動で「立1」「立2」…を付与します。
               未登録の番号は部員として自動追加し、決勝射詰めは無視します。
             </p>
 
@@ -390,7 +441,7 @@ export default function InputPage() {
                 accept=".xlsx,.xls"
                 className="hidden"
                 onChange={handleImportFileSelected}
-                disabled={importing || listingSheets}
+                disabled={importing || listingSheets || relabeling}
               />
               {importFile && (
                 <span className="text-sm text-stone-500 truncate max-w-xs">
@@ -457,10 +508,56 @@ export default function InputPage() {
                 </div>
                 <Button
                   onClick={runTournamentImport}
-                  disabled={importing || !selectedSheet}
+                  disabled={importing || relabeling || !selectedSheet}
                 >
-                  {importing ? "取り込み中..." : "この内容で取り込む"}
+                  {importing ? "取り込み中..." : "この内容で取り込む（新規）"}
                 </Button>
+
+                <div className="border-t pt-3 space-y-2">
+                  <p className="text-sm font-medium text-stone-700">
+                    既存大会の立ちラベルだけ更新（立1→女D など）
+                  </p>
+                  <p className="text-xs text-stone-500">
+                    的中データはそのまま、表示名だけをExcelの立順に合わせます。
+                    登場順で対応付けます（1番目の立ち→Excel最初の立順）。
+                  </p>
+                  <div className="flex flex-wrap gap-3 items-end">
+                    <div className="min-w-[220px] flex-1">
+                      <Label>対象大会</Label>
+                      <Select
+                        value={relabelTournamentId?.toString() ?? ""}
+                        onValueChange={(v) =>
+                          setRelabelTournamentId(v ? Number(v) : null)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="大会を選択..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {tournaments.map((t) => (
+                            <SelectItem key={t.id} value={t.id.toString()}>
+                              {t.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={runRelabelFromExcel}
+                      disabled={
+                        relabeling ||
+                        importing ||
+                        !selectedSheet ||
+                        !relabelTournamentId
+                      }
+                    >
+                      {relabeling
+                        ? "更新中..."
+                        : "立ちラベルをExcelから更新"}
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
 

@@ -76,7 +76,11 @@ function colLabel(i: number): string {
 }
 
 function normalizeTachi(s: string): string {
-  return s.replace(/\s+/g, "");
+  return s
+    .replace(/\s+/g, "")
+    .replace(/[Ａ-Ｚａ-ｚ]/g, (ch) =>
+      String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
+    );
 }
 
 /** 女D / 男A など。純数字は暫定番号とみなし立順にしない */
@@ -85,6 +89,45 @@ function isValidTachiLabel(s: string): boolean {
   if (!n) return false;
   if (/^\d+$/.test(n)) return false;
   return true;
+}
+
+/**
+ * 立順セルを最終ラベルに整える。
+ * - 「女D」「男A」はそのまま
+ * - 「D」「A」のみ → 性別を付けて「女D」「男A」
+ */
+export function finalizeTachiLabel(raw: string, gender: Gender): string {
+  const n = normalizeTachi(raw);
+  if (/^[男女]/.test(n)) return n;
+  if (/^[A-Za-z]$/.test(n)) {
+    return `${gender === "MALE" ? "男" : "女"}${n.toUpperCase()}`;
+  }
+  return n;
+}
+
+/** パース結果から登場順のユニーク立順ラベルを返す */
+export function uniqueTachiLabelsInOrder(rows: ParsedArcherRow[]): string[] {
+  const order: string[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (!seen.has(row.tachiLabel)) {
+      seen.add(row.tachiLabel);
+      order.push(row.tachiLabel);
+    }
+  }
+  return order;
+}
+
+/** 「立1（1回目）」→ base「立1」, attempt 1 */
+export function splitRoundDisplayLabel(label: string): {
+  base: string;
+  attempt: 1 | 2 | null;
+} {
+  const m = label.match(/^(.+?)[（(]\s*([12])\s*回目\s*[）)]$/);
+  if (m) {
+    return { base: m[1].trim(), attempt: Number(m[2]) as 1 | 2 };
+  }
+  return { base: label, attempt: null };
 }
 
 export function parseShotCell(v: unknown): ParsedShot | null {
@@ -440,9 +483,16 @@ export function parseTournamentResultSheet(
       continue;
     }
 
-    pushSample(null);
+    // 「D」のみ → 「女D」/「男A」などへ。自動「立N」はそのまま
+    const tachiLabel = activeAuto
+      ? lastTachi
+      : finalizeTachiLabel(lastTachi, gender);
+    // 以降の行でも同じ完成形を引き継ぐ
+    if (!activeAuto) lastTachi = tachiLabel;
+
+    pushSample(null, tachiLabel);
     rows.push({
-      tachiLabel: lastTachi,
+      tachiLabel,
       positionInTachi: pos,
       memberNumber,
       gender,
