@@ -68,8 +68,13 @@ export default function TeamAnalysisPage() {
   const [tournamentInfo, setTournamentInfo] = useState<Tournament | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const [aiError, setAiError] = useState<string | null>(null);
+
   const { completion, complete, isLoading: aiLoading } = useCompletion({
     api: "/api/analysis/ai",
+    onError: (err) => {
+      setAiError(err.message || "AI分析に失敗しました");
+    },
   });
 
   useEffect(() => {
@@ -93,6 +98,7 @@ export default function TeamAnalysisPage() {
 
   async function runAiAnalysis() {
     if (!tournamentInfo || roundStats.length === 0) return;
+    setAiError(null);
     await complete("", {
       body: {
         type: "team",
@@ -324,6 +330,11 @@ export default function TeamAnalysisPage() {
               </div>
             </CardHeader>
             <CardContent>
+              {aiError && (
+                <div className="mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">
+                  {aiError}
+                </div>
+              )}
               {completion ? (
                 <div className="bg-stone-50 rounded-md p-4 text-sm text-stone-700 leading-relaxed border">
                   {completion}

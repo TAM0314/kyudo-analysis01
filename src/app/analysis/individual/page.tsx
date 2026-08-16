@@ -65,8 +65,13 @@ export default function IndividualAnalysisPage() {
   const [arrowStats, setArrowStats] = useState<ArrowStat[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const [aiError, setAiError] = useState<string | null>(null);
+
   const { completion, complete, isLoading: aiLoading } = useCompletion({
     api: "/api/analysis/ai",
+    onError: (err) => {
+      setAiError(err.message || "AI分析に失敗しました");
+    },
   });
 
   useEffect(() => {
@@ -95,6 +100,7 @@ export default function IndividualAnalysisPage() {
 
   async function runAiAnalysis() {
     if (!selectedMember || chartData.length === 0) return;
+    setAiError(null);
     await complete("", {
       body: {
         type: "individual",
@@ -365,13 +371,18 @@ export default function IndividualAnalysisPage() {
                 <Button
                   size="sm"
                   onClick={runAiAnalysis}
-                  disabled={aiLoading || !process.env.NEXT_PUBLIC_OPENAI_AVAILABLE}
+                  disabled={aiLoading}
                 >
                   {aiLoading ? "分析中..." : "AI分析を実行"}
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
+              {aiError && (
+                <div className="mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">
+                  {aiError}
+                </div>
+              )}
               {completion ? (
                 <div className="bg-stone-50 rounded-md p-4 text-sm text-stone-700 leading-relaxed border">
                   {completion}
