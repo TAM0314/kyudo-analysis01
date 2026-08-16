@@ -46,8 +46,9 @@ export function computeHitRatePercent(hits: number, total: number): number {
   return Math.round((hits / total) * 100000) / 1000;
 }
 
-/** 的中率表示: 0%は「0%」、0%超は小数第3位まで */
+/** 的中率表示: 0%は「0%」、0%超は最大小数第3位（末尾0は省略） */
 export function formatHitRate(rate: number | null | undefined): string {
   if (rate == null || !Number.isFinite(rate) || rate <= 0) return "0%";
-  return `${Number(rate).toFixed(3)}%`;
+  const trimmed = Number(rate).toFixed(3).replace(/\.?0+$/, "");
+  return `${trimmed}%`;
 }
