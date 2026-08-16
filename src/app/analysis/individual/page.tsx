@@ -398,7 +398,7 @@ export default function IndividualAnalysisPage() {
                 <p className="text-stone-400 text-sm">
                   「AI分析を実行」ボタンを押すと、データをもとにAIがコーチ視点でコメントします。
                   <br />
-                  ※ OpenAI APIキーの設定が必要です（設定ページで設定）
+                  ※ Google Gemini APIキーの設定が必要です（設定ページで設定）
                 </p>
               )}
               {/* 統計ベースの自動コメント */}

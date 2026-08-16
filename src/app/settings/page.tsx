@@ -492,35 +492,41 @@ export default function SettingsPage() {
       {/* AI設定 */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">AI分析設定（OpenAI）</CardTitle>
+          <CardTitle className="text-base">AI分析設定（Google Gemini）</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-stone-500">
-            AI分析機能（AIコーチコメント）を使うには、OpenAI の
+            AI分析機能（AIコーチコメント）を使うには、Google AI Studio の
             APIキーが必要です。
             <br />
             プロジェクトフォルダの{" "}
-            <code className="bg-stone-100 px-1 rounded">.env.local</code>{" "}
+            <code className="bg-stone-100 px-1 rounded">.env</code>{" "}
             ファイルに以下を追記してください：
           </p>
           <div className="bg-stone-900 text-stone-100 rounded-md p-4 text-sm font-mono">
-            OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+            GOOGLE_GENERATIVE_AI_API_KEY=あなたのAPIキー
           </div>
           <p className="text-xs text-stone-400">
             ※ APIキーは{" "}
             <a
-              href="https://platform.openai.com/api-keys"
+              href="https://aistudio.google.com/apikey"
               target="_blank"
               rel="noopener noreferrer"
               className="underline"
             >
-              OpenAI Platform
+              Google AI Studio
             </a>{" "}
             で取得できます。設定後はサーバーを再起動してください。
             <br />
             Vercel では環境変数に{" "}
+            <code className="bg-stone-100 px-1 rounded">
+              GOOGLE_GENERATIVE_AI_API_KEY
+            </code>{" "}
+            を設定し、再デプロイしてください。
+            <br />
+            以前の{" "}
             <code className="bg-stone-100 px-1 rounded">OPENAI_API_KEY</code>{" "}
-            を設定してください。
+            は不要です。
           </p>
         </CardContent>
       </Card>

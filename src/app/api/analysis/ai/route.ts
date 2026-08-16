@@ -1,15 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateText } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { google } from "@ai-sdk/google";
 
 export const maxDuration = 60;
 
+function getGoogleApiKey(): string | undefined {
+  return (
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    process.env.GEMINI_API_KEY
+  );
+}
+
 export async function POST(req: NextRequest) {
-  if (!process.env.OPENAI_API_KEY) {
+  if (!getGoogleApiKey()) {
     return NextResponse.json(
       {
         error:
-          "OPENAI_API_KEY \u304c\u8a2d\u5b9a\u3055\u308c\u3066\u3044\u307e\u305b\u3093\u3002\u8a2d\u5b9a\u30da\u30fc\u30b8\u3084 Vercel \u306e\u74b0\u5883\u5909\u6570\u3092\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\u3002",
+          "GOOGLE_GENERATIVE_AI_API_KEY \u304c\u8a2d\u5b9a\u3055\u308c\u3066\u3044\u307e\u305b\u3093\u3002Google AI Studio \u3067\u30ad\u30fc\u3092\u4f5c\u6210\u3057\u3001\u8a2d\u5b9a\u30da\u30fc\u30b8\u307e\u305f\u306f Vercel \u74b0\u5883\u5909\u6570\u306b\u8ffd\u8a18\u3057\u3066\u304f\u3060\u3055\u3044\u3002",
       },
       { status: 503 }
     );
@@ -122,7 +130,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const { text } = await generateText({
-      model: openai("gpt-4o-mini"),
+      model: google("gemini-2.0-flash"),
       prompt,
     });
 
@@ -142,15 +150,18 @@ export async function POST(req: NextRequest) {
     console.error("[ai analysis]", raw);
 
     let message = raw;
-    if (/quota|billing|exceeded your current quota/i.test(raw)) {
+    if (/quota|billing|RESOURCE_EXHAUSTED|exceeded/i.test(raw)) {
       message =
-        "OpenAI \u306e\u5229\u7528\u4e0a\u9650\uff08\u30af\u30a9\u30fc\u30bf\uff09\u3092\u8d85\u3048\u3066\u3044\u307e\u3059\u3002platform.openai.com \u3067\u6c7a\u6e08\u30fb\u5c65\u6b74\u30fb\u5229\u7528\u53ef\u80fd\u984d\u3092\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\u3002";
-    } else if (/incorrect api key|invalid api key|authentication/i.test(raw)) {
+        "Google AI \u306e\u5229\u7528\u4e0a\u9650\uff08\u30af\u30a9\u30fc\u30bf\uff09\u3092\u8d85\u3048\u3066\u3044\u307e\u3059\u3002aistudio.google.com \u3067\u5229\u7528\u72b6\u6cc1\u3092\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\u3002";
+    } else if (/api key|API_KEY|PERMISSION_DENIED|unauthenticated|401|403/i.test(raw)) {
       message =
-        "OpenAI API\u30ad\u30fc\u304c\u7121\u52b9\u3067\u3059\u3002.key \u306e\u5024\u3092\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\u3002";
-    } else if (/rate limit/i.test(raw)) {
+        "Google API\u30ad\u30fc\u304c\u7121\u52b9\u3067\u3059\u3002GOOGLE_GENERATIVE_AI_API_KEY \u3092\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\u3002";
+    } else if (/rate limit|429/i.test(raw)) {
       message =
-        "OpenAI \u306e\u30ea\u30af\u30a8\u30b9\u30c8\u5236\u9650\u306b\u9054\u3057\u307e\u3057\u305f\u3002\u5c11\u3057\u5f85\u3063\u3066\u518d\u8a66\u884c\u3057\u3066\u304f\u3060\u3055\u3044\u3002";
+        "Google AI \u306e\u30ea\u30af\u30a8\u30b9\u30c8\u5236\u9650\u306b\u9054\u3057\u307e\u3057\u305f\u3002\u5c11\u3057\u5f85\u3063\u3066\u518d\u8a66\u884c\u3057\u3066\u304f\u3060\u3055\u3044\u3002";
+    } else if (/model|not found|404/i.test(raw)) {
+      message =
+        "Gemini \u30e2\u30c7\u30eb\u3078\u306e\u63a5\u7d9a\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002" + raw;
     }
 
     return NextResponse.json({ error: message }, { status: 500 });

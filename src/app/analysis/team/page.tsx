@@ -350,7 +350,7 @@ export default function TeamAnalysisPage() {
                 <p className="text-stone-400 text-sm">
                   「AI分析を実行」ボタンを押すと、AIがチームデータを分析してコメントします。
                   <br />
-                  ※ OpenAI APIキーの設定が必要です（設定ページで設定）
+                  ※ Google Gemini APIキーの設定が必要です（設定ページで設定）
                 </p>
               )}
               {/* 統計パターン検出 */}
