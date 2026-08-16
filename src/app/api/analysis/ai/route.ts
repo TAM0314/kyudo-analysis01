@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const { text } = await generateText({
-      model: google("gemini-2.0-flash"),
+      model: google("gemini-2.5-flash"),
       prompt,
     });
 
