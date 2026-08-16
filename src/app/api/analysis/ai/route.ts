@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { streamText } from "ai";
+import { generateText } from "ai";
 import { openai } from "@ai-sdk/openai";
 
 export const maxDuration = 60;
@@ -29,10 +29,7 @@ export async function POST(req: NextRequest) {
 
   if (!type || !data) {
     return NextResponse.json(
-      {
-        error:
-          "type \u3068 data \u304c\u5fc5\u8981\u3067\u3059",
-      },
+      { error: "type \u3068 data \u304c\u5fc5\u8981\u3067\u3059" },
       { status: 400 }
     );
   }
@@ -60,10 +57,7 @@ export async function POST(req: NextRequest) {
       .map((d) => `${d.name}: ${d.hits}/${d.total}\u4e2d (${d.hitRate}%)`)
       .join("\n");
     const arrowData = arrowStats
-      .map(
-        (a) =>
-          `${a.arrowNumber}\u5c04\u76ee: ${a.hits}/${a.total}\u4e2d`
-      )
+      .map((a) => `${a.arrowNumber}\u5c04\u76ee: ${a.hits}/${a.total}\u4e2d`)
       .join("\n");
 
     prompt = [
@@ -96,9 +90,7 @@ export async function POST(req: NextRequest) {
     }>;
 
     const roundData = roundStats
-      .map(
-        (r) => `${r.label}: ${r.hits}/${r.total}\u4e2d (${r.hitRate}%)`
-      )
+      .map((r) => `${r.label}: ${r.hits}/${r.total}\u4e2d (${r.hitRate}%)`)
       .join("\n");
     const arrowData = arrowStats
       .map(
@@ -129,13 +121,38 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = streamText({
+    const { text } = await generateText({
       model: openai("gpt-4o-mini"),
       prompt,
     });
-    return result.toTextStreamResponse();
+
+    if (!text || !text.trim()) {
+      return NextResponse.json(
+        {
+          error:
+            "AI\u304b\u3089\u7a7a\u306e\u5fdc\u7b54\u304c\u8fd4\u308a\u307e\u3057\u305f\u3002API\u30ad\u30fc\u3084\u5229\u7528\u4e0a\u9650\u3092\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\u3002",
+        },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json({ text });
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+    const raw = e instanceof Error ? e.message : String(e);
+    console.error("[ai analysis]", raw);
+
+    let message = raw;
+    if (/quota|billing|exceeded your current quota/i.test(raw)) {
+      message =
+        "OpenAI \u306e\u5229\u7528\u4e0a\u9650\uff08\u30af\u30a9\u30fc\u30bf\uff09\u3092\u8d85\u3048\u3066\u3044\u307e\u3059\u3002platform.openai.com \u3067\u6c7a\u6e08\u30fb\u5c65\u6b74\u30fb\u5229\u7528\u53ef\u80fd\u984d\u3092\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\u3002";
+    } else if (/incorrect api key|invalid api key|authentication/i.test(raw)) {
+      message =
+        "OpenAI API\u30ad\u30fc\u304c\u7121\u52b9\u3067\u3059\u3002.key \u306e\u5024\u3092\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\u3002";
+    } else if (/rate limit/i.test(raw)) {
+      message =
+        "OpenAI \u306e\u30ea\u30af\u30a8\u30b9\u30c8\u5236\u9650\u306b\u9054\u3057\u307e\u3057\u305f\u3002\u5c11\u3057\u5f85\u3063\u3066\u518d\u8a66\u884c\u3057\u3066\u304f\u3060\u3055\u3044\u3002";
+    }
+
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

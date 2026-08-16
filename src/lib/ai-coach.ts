@@ -1,6 +1,6 @@
 /**
- * Call /api/analysis/ai and stream plain text into onChunk.
- * Returns the full text. Throws Error with message from JSON error body when possible.
+ * Call /api/analysis/ai and return coach comment text.
+ * Supports JSON { text } (preferred) and text streams.
  */
 export async function streamAiCoachComment(params: {
   type: "individual" | "team";
@@ -26,22 +26,36 @@ export async function streamAiCoachComment(params: {
       );
     }
     const text = await res.text();
-    throw new Error(text || `AI\u8981\u6c42\u304c\u5931\u6557\u3057\u307e\u3057\u305f (${res.status})`);
+    throw new Error(
+      text || `AI\u8981\u6c42\u304c\u5931\u6557\u3057\u307e\u3057\u305f (${res.status})`
+    );
   }
 
-  // Non-stream JSON (unexpected success shape)
   if (contentType.includes("application/json")) {
-    const json = await res.json();
-    const text =
-      typeof json === "string"
-        ? json
-        : (json.text ?? json.completion ?? JSON.stringify(json));
+    const json = (await res.json()) as {
+      text?: string;
+      completion?: string;
+      error?: string;
+    };
+    if (json.error) throw new Error(json.error);
+    const text = (json.text ?? json.completion ?? "").trim();
+    if (!text) {
+      throw new Error(
+        "AI\u304b\u3089\u7a7a\u306e\u5fdc\u7b54\u304c\u8fd4\u308a\u307e\u3057\u305f"
+      );
+    }
     params.onChunk?.(text);
     return text;
   }
 
+  // Fallback: plain text / stream
   if (!res.body) {
-    const text = await res.text();
+    const text = (await res.text()).trim();
+    if (!text) {
+      throw new Error(
+        "AI\u304b\u3089\u7a7a\u306e\u5fdc\u7b54\u304c\u8fd4\u308a\u307e\u3057\u305f"
+      );
+    }
     params.onChunk?.(text);
     return text;
   }
@@ -49,7 +63,6 @@ export async function streamAiCoachComment(params: {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let full = "";
-
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -57,6 +70,12 @@ export async function streamAiCoachComment(params: {
     params.onChunk?.(full);
   }
   full += decoder.decode();
+  full = full.trim();
+  if (!full) {
+    throw new Error(
+      "AI\u304b\u3089\u7a7a\u306e\u5fdc\u7b54\u304c\u8fd4\u308a\u307e\u3057\u305f"
+    );
+  }
   params.onChunk?.(full);
   return full;
 }
