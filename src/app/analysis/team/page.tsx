@@ -33,6 +33,7 @@ import {
   formatHitRate,
 } from "@/lib/utils";
 import { streamAiCoachComment } from "@/lib/ai-coach";
+import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 
 interface Tournament {
   id: number;
@@ -352,6 +353,20 @@ export default function TeamAnalysisPage() {
 
 type RoundChartRow = RoundStat & { shortLabel: string };
 
+type GenderKey = "MALE" | "FEMALE" | "OTHER";
+
+const GENDER_BAR_COLOR: Record<GenderKey, string> = {
+  MALE: "#2563eb",
+  FEMALE: "#dc2626",
+  OTHER: "#78716c",
+};
+
+const GENDER_SECTION_TITLE: Record<GenderKey, string> = {
+  MALE: "男子",
+  FEMALE: "女子",
+  OTHER: "その他",
+};
+
 function parseRoundLabel(label: string): {
   shortLabel: string;
   attempt: 1 | 2 | null;
@@ -366,10 +381,46 @@ function parseRoundLabel(label: string): {
   return { shortLabel: label, attempt: null };
 }
 
+function inferGenderFromLabel(shortLabel: string): GenderKey | null {
+  if (shortLabel.startsWith("男")) return "MALE";
+  if (shortLabel.startsWith("女")) return "FEMALE";
+  return null;
+}
+
+function inferGenderFromMembers(
+  ...rounds: (RoundChartRow | undefined)[]
+): GenderKey {
+  let male = 0;
+  let female = 0;
+  for (const r of rounds) {
+    for (const m of r?.memberResults ?? []) {
+      if (m.gender === "MALE") male++;
+      else if (m.gender === "FEMALE") female++;
+    }
+  }
+  if (male === 0 && female === 0) return "OTHER";
+  if (male >= female) return "MALE";
+  return "FEMALE";
+}
+
+function placeholderRound(tachi: string, attempt: 1 | 2): RoundChartRow {
+  return {
+    roundId: -attempt,
+    roundNumber: 0,
+    label: `${tachi}（${attempt}回目）`,
+    shortLabel: tachi,
+    hits: 0,
+    total: 0,
+    hitRate: 0,
+    memberResults: [],
+  };
+}
+
 function splitRoundsByAttempt(rounds: RoundStat[]): {
   first: RoundChartRow[];
   second: RoundChartRow[];
   other: RoundChartRow[];
+  tachiOrder: string[];
 } {
   const firstMap = new Map<string, RoundChartRow>();
   const secondMap = new Map<string, RoundChartRow>();
@@ -394,53 +445,186 @@ function splitRoundsByAttempt(rounds: RoundStat[]): {
     }
   }
 
-  // 左右で同じ立順が同じ行になるよう、欠けている側は0%のプレースホルダ
   const first: RoundChartRow[] = [];
   const second: RoundChartRow[] = [];
   for (const tachi of tachiOrder) {
-    const f = firstMap.get(tachi);
-    const s = secondMap.get(tachi);
-    first.push(
-      f ?? {
-        roundId: -1,
-        roundNumber: 0,
-        label: `${tachi}（1回目）`,
-        shortLabel: tachi,
-        hits: 0,
-        total: 0,
-        hitRate: 0,
-        memberResults: [],
-      }
-    );
-    second.push(
-      s ?? {
-        roundId: -2,
-        roundNumber: 0,
-        label: `${tachi}（2回目）`,
-        shortLabel: tachi,
-        hits: 0,
-        total: 0,
-        hitRate: 0,
-        memberResults: [],
-      }
-    );
+    first.push(firstMap.get(tachi) ?? placeholderRound(tachi, 1));
+    second.push(secondMap.get(tachi) ?? placeholderRound(tachi, 2));
   }
 
-  return { first, second, other };
+  return { first, second, other, tachiOrder };
 }
 
-function hitRateFill(rate: number): string {
-  if (rate >= 75) return "#059669";
-  if (rate >= 50) return "#78716c";
-  return "#dc2626";
+type TrendKind = "up" | "down" | "flat" | "na";
+
+function compareAttempts(
+  first: RoundChartRow,
+  second: RoundChartRow
+): { kind: TrendKind; delta: number | null } {
+  if (first.total <= 0 || second.total <= 0) {
+    return { kind: "na", delta: null };
+  }
+  const delta =
+    Math.round((second.hitRate - first.hitRate) * 1000) / 1000;
+  if (delta > 0) return { kind: "up", delta };
+  if (delta < 0) return { kind: "down", delta };
+  return { kind: "flat", delta: 0 };
+}
+
+function TrendIcon({ kind, delta }: { kind: TrendKind; delta: number | null }) {
+  if (kind === "up") {
+    return (
+      <div
+        className="flex flex-col items-center justify-center text-emerald-600"
+        title={`上昇 ${formatHitRate(Math.abs(delta ?? 0))}`}
+      >
+        <ArrowUp className="size-5 stroke-[2.5]" aria-hidden />
+        <span className="text-[10px] font-semibold leading-none mt-0.5">
+          +{formatHitRate(Math.abs(delta ?? 0)).replace("%", "")}
+        </span>
+      </div>
+    );
+  }
+  if (kind === "down") {
+    return (
+      <div
+        className="flex flex-col items-center justify-center text-amber-600"
+        title={`下降 ${formatHitRate(Math.abs(delta ?? 0))}`}
+      >
+        <ArrowDown className="size-5 stroke-[2.5]" aria-hidden />
+        <span className="text-[10px] font-semibold leading-none mt-0.5">
+          -{formatHitRate(Math.abs(delta ?? 0)).replace("%", "")}
+        </span>
+      </div>
+    );
+  }
+  if (kind === "flat") {
+    return (
+      <div
+        className="flex flex-col items-center justify-center text-stone-400"
+        title="変化なし"
+      >
+        <Minus className="size-5 stroke-[2.5]" aria-hidden />
+        <span className="text-[10px] font-semibold leading-none mt-0.5">0</span>
+      </div>
+    );
+  }
+  return (
+    <div
+      className="flex items-center justify-center text-stone-300"
+      title="比較不可"
+    >
+      <Minus className="size-4" aria-hidden />
+    </div>
+  );
+}
+
+function HitRateBar({
+  rate,
+  hits,
+  total,
+  color,
+}: {
+  rate: number;
+  hits: number;
+  total: number;
+  color: string;
+}) {
+  const width = total > 0 ? Math.min(100, Math.max(0, rate)) : 0;
+  return (
+    <div className="min-w-0">
+      <div className="h-7 w-full rounded bg-stone-100 overflow-hidden relative">
+        <div
+          className="h-full rounded transition-[width] duration-300"
+          style={{
+            width: `${width}%`,
+            backgroundColor: total > 0 ? color : "#e7e5e4",
+          }}
+        />
+        <span className="absolute inset-0 flex items-center px-2 text-xs font-semibold text-stone-800">
+          {total > 0
+            ? `${formatHitRate(rate)}（${hits}/${total}中）`
+            : "データなし"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function GenderRoundSection({
+  gender,
+  rows,
+}: {
+  gender: GenderKey;
+  rows: Array<{
+    shortLabel: string;
+    first: RoundChartRow;
+    second: RoundChartRow;
+  }>;
+}) {
+  const color = GENDER_BAR_COLOR[gender];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <span
+          className="inline-block size-3 rounded-sm"
+          style={{ backgroundColor: color }}
+          aria-hidden
+        />
+        <h3 className="text-sm font-semibold text-stone-700">
+          {GENDER_SECTION_TITLE[gender]}
+        </h3>
+        <span className="text-xs text-stone-400">（{rows.length}立）</span>
+      </div>
+
+      <div className="grid grid-cols-[4.5rem_1fr_2.75rem_1fr] gap-x-2 gap-y-1 text-xs text-stone-500 mb-1">
+        <span>立順</span>
+        <span className="text-center">1回目</span>
+        <span className="text-center">変化</span>
+        <span className="text-center">2回目</span>
+      </div>
+
+      <div className="space-y-2">
+        {rows.map(({ shortLabel, first, second }) => {
+          const trend = compareAttempts(first, second);
+          return (
+            <div
+              key={shortLabel}
+              className="grid grid-cols-[4.5rem_1fr_2.75rem_1fr] gap-x-2 items-center"
+            >
+              <span className="text-sm font-medium text-stone-800 truncate">
+                {shortLabel}
+              </span>
+              <HitRateBar
+                rate={first.hitRate}
+                hits={first.hits}
+                total={first.total}
+                color={color}
+              />
+              <TrendIcon kind={trend.kind} delta={trend.delta} />
+              <HitRateBar
+                rate={second.hitRate}
+                hits={second.hits}
+                total={second.total}
+                color={color}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function HorizontalRoundChart({
   title,
   data,
+  color,
 }: {
   title: string;
   data: RoundChartRow[];
+  color: string;
 }) {
   if (data.length === 0) {
     return (
@@ -497,10 +681,7 @@ function HorizontalRoundChart({
           />
           <Bar dataKey="hitRate" radius={[0, 4, 4, 0]} barSize={22}>
             {data.map((d, i) => (
-              <Cell
-                key={i}
-                fill={d.total > 0 ? hitRateFill(d.hitRate) : "#e7e5e4"}
-              />
+              <Cell key={i} fill={d.total > 0 ? color : "#e7e5e4"} />
             ))}
           </Bar>
         </BarChart>
@@ -510,26 +691,119 @@ function HorizontalRoundChart({
 }
 
 function RoundHitRateCharts({ rounds }: { rounds: RoundStat[] }) {
-  const { first, second, other } = splitRoundsByAttempt(rounds);
-  const hasSplit = first.length > 0 || second.length > 0;
+  const { first, second, other, tachiOrder } = splitRoundsByAttempt(rounds);
+  const hasSplit = tachiOrder.length > 0;
 
   if (!hasSplit) {
+    const fallback =
+      other.length > 0
+        ? other
+        : rounds.map((r) => ({ ...r, shortLabel: r.label }));
+    const male = fallback.filter(
+      (r) =>
+        (inferGenderFromLabel(r.shortLabel) ??
+          inferGenderFromMembers(r)) === "MALE"
+    );
+    const female = fallback.filter(
+      (r) =>
+        (inferGenderFromLabel(r.shortLabel) ??
+          inferGenderFromMembers(r)) === "FEMALE"
+    );
+    const rest = fallback.filter((r) => {
+      const g =
+        inferGenderFromLabel(r.shortLabel) ?? inferGenderFromMembers(r);
+      return g === "OTHER";
+    });
+
     return (
-      <HorizontalRoundChart
-        title="立ち別"
-        data={other.length > 0 ? other : rounds.map((r) => ({ ...r, shortLabel: r.label }))}
-      />
+      <div className="space-y-6">
+        {male.length > 0 && (
+          <HorizontalRoundChart
+            title="男子"
+            data={male}
+            color={GENDER_BAR_COLOR.MALE}
+          />
+        )}
+        {female.length > 0 && (
+          <HorizontalRoundChart
+            title="女子"
+            data={female}
+            color={GENDER_BAR_COLOR.FEMALE}
+          />
+        )}
+        {rest.length > 0 && (
+          <HorizontalRoundChart
+            title="その他"
+            data={rest}
+            color={GENDER_BAR_COLOR.OTHER}
+          />
+        )}
+      </div>
     );
   }
 
+  const byGender: Record<
+    GenderKey,
+    Array<{
+      shortLabel: string;
+      first: RoundChartRow;
+      second: RoundChartRow;
+    }>
+  > = { MALE: [], FEMALE: [], OTHER: [] };
+
+  for (let i = 0; i < tachiOrder.length; i++) {
+    const shortLabel = tachiOrder[i];
+    const f = first[i];
+    const s = second[i];
+    const gender =
+      inferGenderFromLabel(shortLabel) ?? inferGenderFromMembers(f, s);
+    byGender[gender].push({ shortLabel, first: f, second: s });
+  }
+
+  const sections = (["MALE", "FEMALE", "OTHER"] as GenderKey[]).filter(
+    (g) => byGender[g].length > 0
+  );
+
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <HorizontalRoundChart title="1回目" data={first} />
-        <HorizontalRoundChart title="2回目" data={second} />
+    <div className="space-y-8">
+      <div className="flex flex-wrap gap-4 text-xs text-stone-500">
+        <span className="inline-flex items-center gap-1">
+          <ArrowUp className="size-3.5 text-emerald-600" /> 上昇
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <ArrowDown className="size-3.5 text-amber-600" /> 下降
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Minus className="size-3.5 text-stone-400" /> 変化なし
+        </span>
+        <span className="inline-flex items-center gap-1.5 ml-auto">
+          <span
+            className="inline-block size-2.5 rounded-sm"
+            style={{ backgroundColor: GENDER_BAR_COLOR.MALE }}
+          />
+          男子
+          <span
+            className="inline-block size-2.5 rounded-sm ml-2"
+            style={{ backgroundColor: GENDER_BAR_COLOR.FEMALE }}
+          />
+          女子
+        </span>
       </div>
+
+      {sections.map((gender) => (
+        <GenderRoundSection
+          key={gender}
+          gender={gender}
+          rows={byGender[gender]}
+        />
+      ))}
+
       {other.length > 0 && (
-        <HorizontalRoundChart title="その他" data={other} />
+        <HorizontalRoundChart
+          title="回次なし"
+          data={other}
+          color={GENDER_BAR_COLOR.OTHER}
+        />
       )}
     </div>
   );
