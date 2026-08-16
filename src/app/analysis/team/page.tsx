@@ -531,9 +531,12 @@ function HitRateBar({
   color: string;
 }) {
   const width = total > 0 ? Math.min(100, Math.max(0, rate)) : 0;
+  const label =
+    total > 0 ? `${formatHitRate(rate)}（${hits}/${total}中）` : "データなし";
+
   return (
-    <div className="min-w-0">
-      <div className="h-7 w-full rounded bg-stone-100 overflow-hidden relative">
+    <div className="min-w-0 flex items-center gap-2">
+      <div className="h-7 flex-1 min-w-0 rounded bg-stone-100 overflow-hidden">
         <div
           className="h-full rounded transition-[width] duration-300"
           style={{
@@ -541,12 +544,10 @@ function HitRateBar({
             backgroundColor: total > 0 ? color : "#e7e5e4",
           }}
         />
-        <span className="absolute inset-0 flex items-center px-2 text-xs font-semibold text-stone-800">
-          {total > 0
-            ? `${formatHitRate(rate)}（${hits}/${total}中）`
-            : "データなし"}
-        </span>
       </div>
+      <span className="shrink-0 w-[7.5rem] text-right text-xs font-semibold text-stone-800 tabular-nums whitespace-nowrap">
+        {label}
+      </span>
     </div>
   );
 }
