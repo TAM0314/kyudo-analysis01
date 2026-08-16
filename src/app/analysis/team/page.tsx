@@ -172,52 +172,13 @@ export default function TeamAnalysisPage() {
 
       {!loading && roundStats.length > 0 && (
         <>
-          {/* 立ち別的中バー */}
+          {/* 立ち別的中（1回目／2回目を左右に横棒） */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">立ち別的中率</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart
-                  data={roundStats}
-                  margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fontSize: 12 }}
-                  />
-                  <YAxis
-                    domain={[0, 100]}
-                    tickFormatter={(v) => formatHitRate(v)}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <Tooltip
-                    formatter={(_, __, props) => {
-                      const d = props.payload as RoundStat;
-                      return [
-                        `${formatHitRate(d.hitRate)}（${d.hits}/${d.total}中）`,
-                        "的中率",
-                      ];
-                    }}
-                  />
-                  <Bar dataKey="hitRate" radius={[4, 4, 0, 0]}>
-                    {roundStats.map((d, i) => (
-                      <Cell
-                        key={i}
-                        fill={
-                          d.hitRate >= 75
-                            ? "#059669"
-                            : d.hitRate >= 50
-                            ? "#78716c"
-                            : "#dc2626"
-                        }
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <RoundHitRateCharts rounds={roundStats} />
             </CardContent>
           </Card>
 
@@ -384,6 +345,191 @@ export default function TeamAnalysisPage() {
             </CardContent>
           </Card>
         </>
+      )}
+    </div>
+  );
+}
+
+type RoundChartRow = RoundStat & { shortLabel: string };
+
+function parseRoundLabel(label: string): {
+  shortLabel: string;
+  attempt: 1 | 2 | null;
+} {
+  const m = label.match(/^(.+?)[（(]\s*([12])\s*回目\s*[）)]$/);
+  if (m) {
+    return {
+      shortLabel: m[1].trim(),
+      attempt: Number(m[2]) as 1 | 2,
+    };
+  }
+  return { shortLabel: label, attempt: null };
+}
+
+function splitRoundsByAttempt(rounds: RoundStat[]): {
+  first: RoundChartRow[];
+  second: RoundChartRow[];
+  other: RoundChartRow[];
+} {
+  const firstMap = new Map<string, RoundChartRow>();
+  const secondMap = new Map<string, RoundChartRow>();
+  const other: RoundChartRow[] = [];
+  const tachiOrder: string[] = [];
+
+  for (const r of rounds) {
+    const { shortLabel, attempt } = parseRoundLabel(r.label);
+    const row = { ...r, shortLabel };
+    if (attempt === 1) {
+      if (!firstMap.has(shortLabel) && !secondMap.has(shortLabel)) {
+        tachiOrder.push(shortLabel);
+      }
+      firstMap.set(shortLabel, row);
+    } else if (attempt === 2) {
+      if (!firstMap.has(shortLabel) && !secondMap.has(shortLabel)) {
+        tachiOrder.push(shortLabel);
+      }
+      secondMap.set(shortLabel, row);
+    } else {
+      other.push(row);
+    }
+  }
+
+  // 左右で同じ立順が同じ行になるよう、欠けている側は0%のプレースホルダ
+  const first: RoundChartRow[] = [];
+  const second: RoundChartRow[] = [];
+  for (const tachi of tachiOrder) {
+    const f = firstMap.get(tachi);
+    const s = secondMap.get(tachi);
+    first.push(
+      f ?? {
+        roundId: -1,
+        roundNumber: 0,
+        label: `${tachi}（1回目）`,
+        shortLabel: tachi,
+        hits: 0,
+        total: 0,
+        hitRate: 0,
+        memberResults: [],
+      }
+    );
+    second.push(
+      s ?? {
+        roundId: -2,
+        roundNumber: 0,
+        label: `${tachi}（2回目）`,
+        shortLabel: tachi,
+        hits: 0,
+        total: 0,
+        hitRate: 0,
+        memberResults: [],
+      }
+    );
+  }
+
+  return { first, second, other };
+}
+
+function hitRateFill(rate: number): string {
+  if (rate >= 75) return "#059669";
+  if (rate >= 50) return "#78716c";
+  return "#dc2626";
+}
+
+function HorizontalRoundChart({
+  title,
+  data,
+}: {
+  title: string;
+  data: RoundChartRow[];
+}) {
+  if (data.length === 0) {
+    return (
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-stone-600 mb-2 text-center">
+          {title}
+        </p>
+        <p className="text-center text-stone-400 text-sm py-8">データなし</p>
+      </div>
+    );
+  }
+
+  const height = Math.max(120, data.length * 40 + 40);
+
+  return (
+    <div className="min-w-0">
+      <p className="text-sm font-medium text-stone-600 mb-2 text-center">
+        {title}
+      </p>
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart
+          layout="vertical"
+          data={data}
+          margin={{ top: 4, right: 28, bottom: 4, left: 8 }}
+        >
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke="#e7e5e4"
+            horizontal={false}
+          />
+          <XAxis
+            type="number"
+            domain={[0, 100]}
+            tickFormatter={(v) => formatHitRate(v)}
+            tick={{ fontSize: 11 }}
+          />
+          <YAxis
+            type="category"
+            dataKey="shortLabel"
+            width={72}
+            tick={{ fontSize: 12 }}
+            interval={0}
+          />
+          <Tooltip
+            formatter={(_, __, props) => {
+              const d = props.payload as RoundChartRow;
+              if (d.total <= 0) return ["データなし", "的中率"];
+              return [
+                `${formatHitRate(d.hitRate)}（${d.hits}/${d.total}中）`,
+                "的中率",
+              ];
+            }}
+            labelFormatter={(label) => String(label)}
+          />
+          <Bar dataKey="hitRate" radius={[0, 4, 4, 0]} barSize={22}>
+            {data.map((d, i) => (
+              <Cell
+                key={i}
+                fill={d.total > 0 ? hitRateFill(d.hitRate) : "#e7e5e4"}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function RoundHitRateCharts({ rounds }: { rounds: RoundStat[] }) {
+  const { first, second, other } = splitRoundsByAttempt(rounds);
+  const hasSplit = first.length > 0 || second.length > 0;
+
+  if (!hasSplit) {
+    return (
+      <HorizontalRoundChart
+        title="立ち別"
+        data={other.length > 0 ? other : rounds.map((r) => ({ ...r, shortLabel: r.label }))}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <HorizontalRoundChart title="1回目" data={first} />
+        <HorizontalRoundChart title="2回目" data={second} />
+      </div>
+      {other.length > 0 && (
+        <HorizontalRoundChart title="その他" data={other} />
       )}
     </div>
   );
