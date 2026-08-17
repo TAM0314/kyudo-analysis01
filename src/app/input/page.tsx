@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { shotResultLabel, shotResultColor } from "@/lib/utils";
+import { useImport } from "@/contexts/ImportContext";
 
 type ShotResult = "HIT" | "MISS" | "SHITSU";
 type TournamentType = "PUBLIC" | "PRACTICE" | "SELECTION";
@@ -98,26 +99,24 @@ export default function InputPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  // Excelインポート
+  // Excelインポート（実行・結果はグローバルContextで管理）
+  const { importing, result: importResult, runImport, clearResult } = useImport();
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [selectedSheet, setSelectedSheet] = useState("");
   const [listingSheets, setListingSheets] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [importName, setImportName] = useState("");
   const [importDate, setImportDate] = useState(
     new Date().toISOString().slice(0, 10)
   );
   const [importType, setImportType] = useState<TournamentType>("PUBLIC");
-  const [importMessage, setImportMessage] = useState<string | null>(null);
-  const [importDiagnostics, setImportDiagnostics] = useState<string | null>(
-    null
-  );
   const [relabelTournamentId, setRelabelTournamentId] = useState<number | null>(
     null
   );
   const [relabeling, setRelabeling] = useState(false);
+  const [relabelMessage, setRelabelMessage] = useState<string | null>(null);
+  const [relabelDiagnostics, setRelabelDiagnostics] = useState<string | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
 
   const fetchTournaments = useCallback(async () => {
@@ -136,6 +135,16 @@ export default function InputPage() {
     fetchTournaments();
     fetchMembers();
   }, [fetchTournaments, fetchMembers]);
+
+  // インポート完了時に大会リストを更新し、新規大会を自動選択
+  useEffect(() => {
+    if (importResult?.ok && importResult.tournamentId) {
+      fetchTournaments();
+      fetchMembers();
+      setSelectedTournamentId(importResult.tournamentId);
+      setSelectedRoundId(null);
+    }
+  }, [importResult, fetchTournaments, fetchMembers]);
 
   const selectedTournament = tournaments.find(
     (t) => t.id === selectedTournamentId
@@ -253,7 +262,7 @@ export default function InputPage() {
     setEntries((prev) => prev.map((e) => ({ ...e, saved: true })));
   }
 
-  function clearImport() {
+  function clearImportForm() {
     setImportFile(null);
     setSheetNames([]);
     setSelectedSheet("");
@@ -266,8 +275,7 @@ export default function InputPage() {
   ) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setImportMessage(null);
-    setImportDiagnostics(null);
+    clearResult();
     setImportFile(file);
     setSheetNames([]);
     setSelectedSheet("");
@@ -284,79 +292,38 @@ export default function InputPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setImportMessage(data.error ?? "シート一覧の取得に失敗しました");
-        clearImport();
+        clearImportForm();
       } else {
         setSheetNames(data.sheets ?? []);
         setSelectedSheet(data.suggested ?? data.sheets?.[0] ?? "");
       }
     } catch {
-      setImportMessage("通信エラーが発生しました");
-      clearImport();
+      clearImportForm();
     }
     setListingSheets(false);
   }
 
   async function runTournamentImport() {
     if (!importFile || !selectedSheet) return;
-    setImporting(true);
-    setImportMessage(null);
-    setImportDiagnostics(null);
-
-    const formData = new FormData();
-    formData.append("file", importFile);
-    formData.append("sheetName", selectedSheet);
-    formData.append("name", importName);
-    formData.append("date", importDate);
-    formData.append("type", importType);
-
-    try {
-      const res = await fetch("/api/tournaments/import", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setImportMessage(data.error ?? "インポートに失敗しました");
-        setImportDiagnostics(
-          data.diagnosticText ??
-            (data.warnings?.length ? data.warnings.join("\n") : null)
-        );
-      } else {
-        const warn =
-          data.warnings?.length > 0
-            ? `（注意${data.warnings.length}件）`
-            : "";
-        const labels =
-          data.tachiLabels?.length > 0
-            ? `／立順: ${data.tachiLabels.join("、")}`
-            : "";
-        setImportMessage(`${data.message}${warn}${labels}`);
-        if (data.warnings?.length) {
-          setImportDiagnostics(data.warnings.join("\n"));
-        }
-        clearImport();
-        await fetchTournaments();
-        await fetchMembers();
-        if (data.tournament?.id) {
-          setSelectedTournamentId(data.tournament.id);
-          setSelectedRoundId(null);
-        }
-      }
-    } catch {
-      setImportMessage("通信エラーが発生しました");
-    }
-    setImporting(false);
+    // Contextのrunimportに委譲（ページ移動しても処理が継続される）
+    clearImportForm();
+    await runImport({
+      file: importFile,
+      sheetName: selectedSheet,
+      name: importName,
+      date: importDate,
+      type: importType,
+    });
   }
 
   async function runRelabelFromExcel() {
     if (!importFile || !selectedSheet || !relabelTournamentId) {
-      setImportMessage("Excel・シート・対象大会を選んでください");
+      setRelabelMessage("Excel・シート・対象大会を選んでください");
       return;
     }
     setRelabeling(true);
-    setImportMessage(null);
-    setImportDiagnostics(null);
+    setRelabelMessage(null);
+    setRelabelDiagnostics(null);
 
     const formData = new FormData();
     formData.append("file", importFile);
@@ -371,24 +338,24 @@ export default function InputPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setImportMessage(data.error ?? "ラベル更新に失敗しました");
-        setImportDiagnostics(
+        setRelabelMessage(data.error ?? "ラベル更新に失敗しました");
+        setRelabelDiagnostics(
           data.diagnosticText ??
             (data.excelTachis
               ? `Excel立順: ${data.excelTachis.join("、")}`
               : null)
         );
       } else {
-        setImportMessage(data.message ?? "ラベルを更新しました");
+        setRelabelMessage(data.message ?? "ラベルを更新しました");
         if (data.excelTachis?.length) {
-          setImportDiagnostics(`Excel立順: ${data.excelTachis.join("、")}`);
+          setRelabelDiagnostics(`Excel立順: ${data.excelTachis.join("、")}`);
         }
         await fetchTournaments();
         setSelectedTournamentId(relabelTournamentId);
         setSelectedRoundId(null);
       }
     } catch {
-      setImportMessage("通信エラーが発生しました");
+      setRelabelMessage("通信エラーが発生しました");
     }
     setRelabeling(false);
   }
@@ -561,26 +528,25 @@ export default function InputPage() {
               </div>
             )}
 
-            {importMessage && (
+            {/* インポート結果（Contextで管理、バナーにも表示される） */}
+            {importResult && (
               <div
                 className={`text-sm rounded p-3 ${
-                  importMessage.includes("失敗") ||
-                  importMessage.includes("ありません") ||
-                  importMessage.includes("エラー")
+                  !importResult.ok
                     ? "bg-red-50 text-red-800 border border-red-200"
                     : "bg-emerald-50 text-emerald-800 border border-emerald-200"
                 }`}
               >
-                {importMessage}
+                {importResult.message}
               </div>
             )}
-            {importDiagnostics && (
+            {importResult?.diagnostics && (
               <div className="space-y-2">
                 <p className="text-sm font-medium text-stone-700">
                   診断情報（この内容を共有すると原因特定が早いです）
                 </p>
                 <pre className="text-xs bg-stone-900 text-stone-100 rounded-md p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-80">
-                  {importDiagnostics}
+                  {importResult.diagnostics}
                 </pre>
                 <Button
                   type="button"
@@ -588,10 +554,7 @@ export default function InputPage() {
                   size="sm"
                   onClick={async () => {
                     try {
-                      await navigator.clipboard.writeText(importDiagnostics);
-                      setImportMessage(
-                        (importMessage ?? "") + "（診断情報をコピーしました）"
-                      );
+                      await navigator.clipboard.writeText(importResult.diagnostics!);
                     } catch {
                       /* ignore */
                     }
@@ -600,6 +563,24 @@ export default function InputPage() {
                   診断情報をコピー
                 </Button>
               </div>
+            )}
+            {/* ラベル更新の結果（ローカル状態で管理） */}
+            {relabelMessage && (
+              <div
+                className={`text-sm rounded p-3 ${
+                  relabelMessage.includes("失敗") ||
+                  relabelMessage.includes("エラー")
+                    ? "bg-red-50 text-red-800 border border-red-200"
+                    : "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                }`}
+              >
+                {relabelMessage}
+              </div>
+            )}
+            {relabelDiagnostics && (
+              <pre className="text-xs bg-stone-900 text-stone-100 rounded-md p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-40">
+                {relabelDiagnostics}
+              </pre>
             )}
           </CardContent>
         )}
