@@ -451,7 +451,17 @@ export function parseTournamentResultSheet(
       continue;
     }
 
-    // 立順が空 / 純数字のみ → 5人ごとに自動ラベル（A列空白・暫定番号対応）
+    // D列（立順内ポジション）を先読みし、1にリセットされたら新しい立として扱う
+    // （5人未満の立に対応するため、固定カウントではなくリセット検知を優先する）
+    const rawPos = Number(cellStr(row[tachiCol + 1]));
+    if (activeAuto && rawPos === 1 && autoCountInGroup > 0) {
+      lastTachi = "";
+      activeAuto = false;
+      autoCountInGroup = 0;
+      lastPos = 0;
+    }
+
+    // 立順が空 / 純数字のみ → 自動ラベル（A列空白・暫定番号対応）
     if (!lastTachi) {
       autoTachiIndex += 1;
       lastTachi = `\u7acb${autoTachiIndex}`;
@@ -461,7 +471,7 @@ export function parseTournamentResultSheet(
       skipCounts.noTachi++;
     }
 
-    let pos = Number(cellStr(row[tachiCol + 1]));
+    let pos = rawPos;
     if (activeAuto) {
       autoCountInGroup += 1;
       pos = autoCountInGroup;
