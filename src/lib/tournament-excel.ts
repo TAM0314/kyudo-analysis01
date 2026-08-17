@@ -396,9 +396,27 @@ export function parseTournamentResultSheet(
 
     scannedRows++;
 
-    const tachiRaw = cellStr(row[tachiCol]);
-    if (tachiRaw && isValidTachiLabel(tachiRaw)) {
-      lastTachi = normalizeTachi(tachiRaw);
+    // 立順ラベルの読み取り:
+    // tachiColが位置番号(1-5の純数字)の場合、結合ヘッダの前列から「男B」「女D」等のラベルを構築する
+    // 例: A=「男」B=「B」C=（空）D=「1-5」の場合、「立順」ヘッダがA-D結合→ tachiCol=3(D)
+    const tachiRawCell = cellStr(row[tachiCol]);
+    const tachiRawNorm = normalizeTachi(tachiRawCell);
+    const tachiColHasPositionNum =
+      tachiRawNorm !== "" && /^\d+$/.test(tachiRawNorm);
+
+    let effectiveTachiRaw = tachiRawCell;
+    if (tachiColHasPositionNum && tachiCol > 0) {
+      // tachiColより前の列から非数字セルを結合してラベルを構築（例:「男」+「B」→「男B」）
+      const parts: string[] = [];
+      for (let c = 0; c < tachiCol; c++) {
+        const v = normalizeTachi(cellStr(row[c]));
+        if (v && !/^\d+$/.test(v)) parts.push(v);
+      }
+      if (parts.length > 0) effectiveTachiRaw = parts.join("");
+    }
+
+    if (effectiveTachiRaw && isValidTachiLabel(effectiveTachiRaw)) {
+      lastTachi = normalizeTachi(effectiveTachiRaw);
       lastPos = 0;
       activeAuto = false;
       autoCountInGroup = 0;
@@ -421,7 +439,7 @@ export function parseTournamentResultSheet(
       }
       sampleDataRows.push({
         excelRow: r + 1,
-        tachi: tachiForSample || lastTachi || tachiRaw || "(empty)",
+        tachi: tachiForSample || lastTachi || effectiveTachiRaw || "(empty)",
         numberRaw: numberRaw || "(empty)",
         genderRaw: genderRaw || "(empty)",
         round1Raw,
@@ -451,9 +469,14 @@ export function parseTournamentResultSheet(
       continue;
     }
 
-    // D列（立順内ポジション）を先読みし、1にリセットされたら新しい立として扱う
-    // （5人未満の立に対応するため、固定カウントではなくリセット検知を優先する）
-    const rawPos = Number(cellStr(row[tachiCol + 1]));
+    // ポジション番号の読み取り:
+    // tachiCol自体が位置番号を持つ場合はそこから直接読む（結合ヘッダ対応）
+    // そうでなければ従来通りtachiCol+1から読む
+    const rawPos = tachiColHasPositionNum
+      ? Number(tachiRawNorm)
+      : Number(cellStr(row[tachiCol + 1]));
+
+    // ポジションが1にリセットされ、かつ自動モードで既に人がいる → 新しい立を開始
     if (activeAuto && rawPos === 1 && autoCountInGroup > 0) {
       lastTachi = "";
       activeAuto = false;
