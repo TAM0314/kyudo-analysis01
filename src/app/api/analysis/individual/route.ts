@@ -6,13 +6,17 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const memberId = searchParams.get("memberId");
   const limit = Number(searchParams.get("limit") ?? "10");
+  const typeFilter = searchParams.get("type"); // "PUBLIC" | "PRACTICE" | "SELECTION" | null
 
   if (!memberId) {
     return NextResponse.json({ error: "memberId?????" }, { status: 400 });
   }
 
   const entries = await prisma.entry.findMany({
-    where: { memberId: Number(memberId) },
+    where: {
+      memberId: Number(memberId),
+      ...(typeFilter ? { round: { tournament: { type: typeFilter as "PUBLIC" | "PRACTICE" | "SELECTION" } } } : {}),
+    },
     include: {
       shots: { orderBy: { arrowNumber: "asc" } },
       round: {

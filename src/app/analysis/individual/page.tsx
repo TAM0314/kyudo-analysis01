@@ -55,12 +55,22 @@ interface ArrowStat {
   total: number;
 }
 
+type TournamentTypeFilter = "ALL" | "PUBLIC" | "PRACTICE" | "SELECTION";
+
+const TYPE_FILTER_OPTIONS: { value: TournamentTypeFilter; label: string }[] = [
+  { value: "ALL", label: "すべて" },
+  { value: "PUBLIC", label: "公式戦" },
+  { value: "PRACTICE", label: "練習試合" },
+  { value: "SELECTION", label: "校内選考" },
+];
+
 const LIMIT_OPTIONS = [5, 10, 20, 50];
 
 export default function IndividualAnalysisPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
   const [limit, setLimit] = useState(10);
+  const [typeFilter, setTypeFilter] = useState<TournamentTypeFilter>("ALL");
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [arrowStats, setArrowStats] = useState<ArrowStat[]>([]);
   const [loading, setLoading] = useState(false);
@@ -77,14 +87,15 @@ export default function IndividualAnalysisPage() {
   const fetchAnalysis = useCallback(async () => {
     if (!selectedMemberId) return;
     setLoading(true);
+    const typeParam = typeFilter !== "ALL" ? `&type=${typeFilter}` : "";
     const res = await fetch(
-      `/api/analysis/individual?memberId=${selectedMemberId}&limit=${limit}`
+      `/api/analysis/individual?memberId=${selectedMemberId}&limit=${limit}${typeParam}`
     );
     const data = await res.json();
     setChartData(data.chartData);
     setArrowStats(data.arrowStats);
     setLoading(false);
-  }, [selectedMemberId, limit]);
+  }, [selectedMemberId, limit, typeFilter]);
 
   useEffect(() => {
     fetchAnalysis();
@@ -93,7 +104,7 @@ export default function IndividualAnalysisPage() {
   useEffect(() => {
     setCompletion("");
     setAiError(null);
-  }, [selectedMemberId]);
+  }, [selectedMemberId, typeFilter]);
 
   const selectedMember = members.find((m) => m.id === selectedMemberId);
 
@@ -139,7 +150,7 @@ export default function IndividualAnalysisPage() {
 
       {/* 選択UI */}
       <Card>
-        <CardContent className="pt-5">
+        <CardContent className="pt-5 space-y-4">
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex-1 min-w-40">
               <label className="text-sm font-medium text-stone-600 block mb-1">
@@ -182,6 +193,28 @@ export default function IndividualAnalysisPage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          {/* 大会種別フィルター */}
+          <div>
+            <label className="text-sm font-medium text-stone-600 block mb-2">
+              大会種別
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {TYPE_FILTER_OPTIONS.map(({ value, label }) => (
+                <button
+                  key={value}
+                  onClick={() => setTypeFilter(value)}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
+                    typeFilter === value
+                      ? "bg-stone-800 text-white border-stone-800"
+                      : "bg-white text-stone-600 border-stone-300 hover:bg-stone-50 hover:border-stone-400"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
         </CardContent>
@@ -230,7 +263,22 @@ export default function IndividualAnalysisPage() {
           {/* 的中率推移グラフ */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">的中率推移</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">的中率推移</CardTitle>
+                {typeFilter === "ALL" && (
+                  <div className="flex gap-3 text-xs text-stone-500">
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block size-2.5 rounded-full bg-blue-600" />公式戦
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block size-2.5 rounded-full bg-emerald-600" />練習試合
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block size-2.5 rounded-full bg-amber-600" />校内選考
+                    </span>
+                  </div>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={260}>
@@ -285,8 +333,19 @@ export default function IndividualAnalysisPage() {
                     dataKey="hitRate"
                     stroke="#292524"
                     strokeWidth={2}
-                    dot={{ r: 4, fill: "#292524" }}
-                    activeDot={{ r: 6 }}
+                    dot={(props) => {
+                      const { cx, cy, payload } = props;
+                      const colors: Record<string, string> = {
+                        PUBLIC: "#2563eb",
+                        PRACTICE: "#059669",
+                        SELECTION: "#d97706",
+                      };
+                      const fill = typeFilter === "ALL"
+                        ? (colors[payload.type] ?? "#292524")
+                        : "#292524";
+                      return <circle key={`dot-${payload.tournamentId}`} cx={cx} cy={cy} r={5} fill={fill} stroke="#fff" strokeWidth={1.5} />;
+                    }}
+                    activeDot={{ r: 7 }}
                   />
                 </LineChart>
               </ResponsiveContainer>
