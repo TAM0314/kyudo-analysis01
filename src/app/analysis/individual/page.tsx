@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -39,6 +39,15 @@ interface Member {
   grade: number | null;
 }
 
+interface RoundResult {
+  roundId: number;
+  roundNumber: number;
+  label: string | null;
+  hits: number;
+  total: number;
+  arrowResults: string[];
+}
+
 interface ChartDataPoint {
   tournamentId: number;
   name: string;
@@ -47,6 +56,7 @@ interface ChartDataPoint {
   hitRate: number;
   hits: number;
   total: number;
+  rounds: RoundResult[];
 }
 
 interface ArrowStat {
@@ -57,14 +67,38 @@ interface ArrowStat {
 
 type TournamentTypeFilter = "ALL" | "PUBLIC" | "PRACTICE" | "SELECTION";
 
-const TYPE_FILTER_OPTIONS: { value: TournamentTypeFilter; label: string }[] = [
-  { value: "ALL", label: "すべて" },
-  { value: "PUBLIC", label: "公式戦" },
-  { value: "PRACTICE", label: "練習試合" },
-  { value: "SELECTION", label: "校内選考" },
+const TYPE_FILTER_OPTIONS: { value: TournamentTypeFilter; label: string; color: string }[] = [
+  { value: "ALL",       label: "すべて",   color: "" },
+  { value: "PUBLIC",    label: "公式戦",   color: "#2563eb" },
+  { value: "PRACTICE",  label: "練習試合", color: "#059669" },
+  { value: "SELECTION", label: "校内選考", color: "#d97706" },
 ];
 
+const TYPE_COLOR: Record<string, string> = {
+  PUBLIC:    "#2563eb",
+  PRACTICE:  "#059669",
+  SELECTION: "#d97706",
+};
+
 const LIMIT_OPTIONS = [5, 10, 20, 50];
+
+/** chartData からクライアント側で射順別的中を集計 */
+function computeArrowStatsFromData(data: ChartDataPoint[]): ArrowStat[] {
+  return [1, 2, 3, 4].map((n) => {
+    let hits = 0;
+    let total = 0;
+    for (const t of data) {
+      for (const r of t.rounds) {
+        const result = r.arrowResults[n - 1];
+        if (result !== undefined) {
+          total++;
+          if (result === "HIT") hits++;
+        }
+      }
+    }
+    return { arrowNumber: n, hits, total };
+  });
+}
 
 export default function IndividualAnalysisPage() {
   const [members, setMembers] = useState<Member[]>([]);
@@ -72,7 +106,6 @@ export default function IndividualAnalysisPage() {
   const [limit, setLimit] = useState(10);
   const [typeFilter, setTypeFilter] = useState<TournamentTypeFilter>("ALL");
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
-  const [arrowStats, setArrowStats] = useState<ArrowStat[]>([]);
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -87,15 +120,13 @@ export default function IndividualAnalysisPage() {
   const fetchAnalysis = useCallback(async () => {
     if (!selectedMemberId) return;
     setLoading(true);
-    const typeParam = typeFilter !== "ALL" ? `&type=${typeFilter}` : "";
     const res = await fetch(
-      `/api/analysis/individual?memberId=${selectedMemberId}&limit=${limit}${typeParam}`
+      `/api/analysis/individual?memberId=${selectedMemberId}&limit=${limit}`
     );
     const data = await res.json();
-    setChartData(data.chartData);
-    setArrowStats(data.arrowStats);
+    setChartData(data.chartData ?? []);
     setLoading(false);
-  }, [selectedMemberId, limit, typeFilter]);
+  }, [selectedMemberId, limit]);
 
   useEffect(() => {
     fetchAnalysis();
@@ -108,8 +139,25 @@ export default function IndividualAnalysisPage() {
 
   const selectedMember = members.find((m) => m.id === selectedMemberId);
 
+  /** フィルター後の表示データ（全データは保持し、ハイライト判定に使う） */
+  const filteredData = useMemo(
+    () => typeFilter === "ALL" ? chartData : chartData.filter((d) => d.type === typeFilter),
+    [chartData, typeFilter]
+  );
+
+  /** 射順統計：フィルターに応じてクライアント側で再集計 */
+  const arrowStats = useMemo(
+    () => computeArrowStatsFromData(filteredData),
+    [filteredData]
+  );
+
+  /** サマリー（フィルター後） */
+  const avgHitRate = filteredData.length > 0
+    ? filteredData.reduce((sum, d) => sum + d.hitRate, 0) / filteredData.length
+    : null;
+
   async function runAiAnalysis() {
-    if (!selectedMember || chartData.length === 0) {
+    if (!selectedMember || filteredData.length === 0) {
       setAiError("部員を選び、的中データがある状態で実行してください");
       return;
     }
@@ -122,7 +170,7 @@ export default function IndividualAnalysisPage() {
         data: {
           memberNumber: selectedMember.number,
           gender: selectedMember.gender,
-          chartData,
+          chartData: filteredData,
           arrowStats,
         },
         onChunk: setCompletion,
@@ -133,11 +181,6 @@ export default function IndividualAnalysisPage() {
       setAiLoading(false);
     }
   }
-
-  const avgHitRate =
-    chartData.length > 0
-      ? chartData.reduce((sum, d) => sum + d.hitRate, 0) / chartData.length
-      : null;
 
   return (
     <div className="space-y-6">
@@ -150,7 +193,7 @@ export default function IndividualAnalysisPage() {
 
       {/* 選択UI */}
       <Card>
-        <CardContent className="pt-5 space-y-4">
+        <CardContent className="pt-5">
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex-1 min-w-40">
               <label className="text-sm font-medium text-stone-600 block mb-1">
@@ -195,28 +238,6 @@ export default function IndividualAnalysisPage() {
               </Select>
             </div>
           </div>
-
-          {/* 大会種別フィルター */}
-          <div>
-            <label className="text-sm font-medium text-stone-600 block mb-2">
-              大会種別
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {TYPE_FILTER_OPTIONS.map(({ value, label }) => (
-                <button
-                  key={value}
-                  onClick={() => setTypeFilter(value)}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
-                    typeFilter === value
-                      ? "bg-stone-800 text-white border-stone-800"
-                      : "bg-white text-stone-600 border-stone-300 hover:bg-stone-50 hover:border-stone-400"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
         </CardContent>
       </Card>
 
@@ -232,6 +253,36 @@ export default function IndividualAnalysisPage() {
 
       {!loading && chartData.length > 0 && (
         <>
+          {/* ── 大会種別フィルター ── */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-medium text-stone-500 uppercase tracking-wide mr-1">
+              大会種別
+            </span>
+            {TYPE_FILTER_OPTIONS.map(({ value, label, color }) => {
+              const active = typeFilter === value;
+              return (
+                <button
+                  key={value}
+                  onClick={() => setTypeFilter(value)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                    active
+                      ? "text-white border-transparent shadow-sm"
+                      : "bg-white text-stone-500 border-stone-200 hover:border-stone-400 hover:text-stone-700"
+                  }`}
+                  style={active ? { backgroundColor: color || "#292524", borderColor: color || "#292524" } : {}}
+                >
+                  {color && (
+                    <span
+                      className="inline-block size-2 rounded-full"
+                      style={{ backgroundColor: active ? "rgba(255,255,255,0.7)" : color }}
+                    />
+                  )}
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
           {/* サマリー */}
           <div className="grid grid-cols-3 gap-4">
             <Card>
@@ -245,7 +296,7 @@ export default function IndividualAnalysisPage() {
             <Card>
               <CardContent className="pt-5 text-center">
                 <p className="text-3xl font-bold text-stone-800">
-                  {formatHitRate(chartData[chartData.length - 1]?.hitRate)}
+                  {formatHitRate(filteredData[filteredData.length - 1]?.hitRate)}
                 </p>
                 <p className="text-sm text-stone-500 mt-1">直近試合</p>
               </CardContent>
@@ -253,7 +304,7 @@ export default function IndividualAnalysisPage() {
             <Card>
               <CardContent className="pt-5 text-center">
                 <p className="text-3xl font-bold text-stone-800">
-                  {chartData.length}
+                  {filteredData.length}
                 </p>
                 <p className="text-sm text-stone-500 mt-1">試合数</p>
               </CardContent>
@@ -263,21 +314,16 @@ export default function IndividualAnalysisPage() {
           {/* 的中率推移グラフ */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <CardTitle className="text-base">的中率推移</CardTitle>
-                {typeFilter === "ALL" && (
-                  <div className="flex gap-3 text-xs text-stone-500">
-                    <span className="flex items-center gap-1">
-                      <span className="inline-block size-2.5 rounded-full bg-blue-600" />公式戦
+                <div className="flex gap-3 text-xs text-stone-500">
+                  {TYPE_FILTER_OPTIONS.filter((o) => o.color).map((o) => (
+                    <span key={o.value} className="flex items-center gap-1">
+                      <span className="inline-block size-2.5 rounded-full" style={{ backgroundColor: o.color }} />
+                      {o.label}
                     </span>
-                    <span className="flex items-center gap-1">
-                      <span className="inline-block size-2.5 rounded-full bg-emerald-600" />練習試合
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="inline-block size-2.5 rounded-full bg-amber-600" />校内選考
-                    </span>
-                  </div>
-                )}
+                  ))}
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -331,21 +377,38 @@ export default function IndividualAnalysisPage() {
                   <Line
                     type="monotone"
                     dataKey="hitRate"
-                    stroke="#292524"
-                    strokeWidth={2}
+                    stroke="#d6d3d1"
+                    strokeWidth={1.5}
                     dot={(props) => {
                       const { cx, cy, payload } = props;
-                      const colors: Record<string, string> = {
-                        PUBLIC: "#2563eb",
-                        PRACTICE: "#059669",
-                        SELECTION: "#d97706",
-                      };
-                      const fill = typeFilter === "ALL"
-                        ? (colors[payload.type] ?? "#292524")
-                        : "#292524";
-                      return <circle key={`dot-${payload.tournamentId}`} cx={cx} cy={cy} r={5} fill={fill} stroke="#fff" strokeWidth={1.5} />;
+                      const matched = typeFilter === "ALL" || payload.type === typeFilter;
+                      const fill = TYPE_COLOR[payload.type] ?? "#78716c";
+                      if (matched) {
+                        return (
+                          <circle
+                            key={`dot-${payload.tournamentId}`}
+                            cx={cx} cy={cy} r={6}
+                            fill={fill}
+                            stroke="#fff"
+                            strokeWidth={2}
+                          />
+                        );
+                      }
+                      return (
+                        <circle
+                          key={`dot-${payload.tournamentId}`}
+                          cx={cx} cy={cy} r={4}
+                          fill="#d6d3d1"
+                          stroke="none"
+                          opacity={0.4}
+                        />
+                      );
                     }}
-                    activeDot={{ r: 7 }}
+                    activeDot={(props) => {
+                      const { cx, cy, payload } = props as { cx: number; cy: number; payload: ChartDataPoint };
+                      const fill = TYPE_COLOR[payload.type] ?? "#78716c";
+                      return <circle cx={cx} cy={cy} r={8} fill={fill} stroke="#fff" strokeWidth={2} />;
+                    }}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -355,77 +418,92 @@ export default function IndividualAnalysisPage() {
           {/* 射順別的中 */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">射順別的中率（全試合集計）</CardTitle>
+              <CardTitle className="text-base">
+                射順別的中率
+                {typeFilter !== "ALL" && (
+                  <span className="ml-2 text-xs font-normal text-stone-400">
+                    （{TYPE_FILTER_OPTIONS.find((o) => o.value === typeFilter)?.label}のみ集計）
+                  </span>
+                )}
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart
-                  data={arrowStats}
-                  margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
-                  <XAxis
-                    dataKey="arrowNumber"
-                    tickFormatter={(v) => `${v}射目`}
-                    tick={{ fontSize: 12 }}
-                  />
-                  <YAxis
-                    domain={[0, 100]}
-                    tickFormatter={(v) => formatHitRate(v)}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <Tooltip
-                    formatter={(_, __, props) => {
-                      const d = props.payload as ArrowStat;
-                      const rate = computeHitRatePercent(d.hits, d.total);
-                      return [
-                        `${formatHitRate(rate)}（${d.hits}/${d.total}中）`,
-                        "的中率",
-                      ];
-                    }}
-                    labelFormatter={(v) => `${v}射目`}
-                  />
-                  <Bar
-                    dataKey={(d: ArrowStat) =>
-                      computeHitRatePercent(d.hits, d.total)
-                    }
-                    name="的中率"
-                    radius={[4, 4, 0, 0]}
-                  >
-                    {arrowStats.map((d, i) => {
+              {filteredData.length === 0 ? (
+                <p className="text-center text-stone-400 py-6 text-sm">
+                  該当する試合データがありません
+                </p>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <BarChart
+                      data={arrowStats}
+                      margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
+                      <XAxis
+                        dataKey="arrowNumber"
+                        tickFormatter={(v) => `${v}射目`}
+                        tick={{ fontSize: 12 }}
+                      />
+                      <YAxis
+                        domain={[0, 100]}
+                        tickFormatter={(v) => formatHitRate(v)}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <Tooltip
+                        formatter={(_, __, props) => {
+                          const d = props.payload as ArrowStat;
+                          const rate = computeHitRatePercent(d.hits, d.total);
+                          return [
+                            `${formatHitRate(rate)}（${d.hits}/${d.total}中）`,
+                            "的中率",
+                          ];
+                        }}
+                        labelFormatter={(v) => `${v}射目`}
+                      />
+                      <Bar
+                        dataKey={(d: ArrowStat) =>
+                          computeHitRatePercent(d.hits, d.total)
+                        }
+                        name="的中率"
+                        radius={[4, 4, 0, 0]}
+                      >
+                        {arrowStats.map((d, i) => {
+                          const rate = computeHitRatePercent(d.hits, d.total);
+                          return (
+                            <Cell
+                              key={i}
+                              fill={
+                                rate >= 75
+                                  ? "#059669"
+                                  : rate >= 50
+                                  ? "#78716c"
+                                  : "#dc2626"
+                              }
+                            />
+                          );
+                        })}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <div className="flex gap-4 mt-3">
+                    {arrowStats.map((d) => {
                       const rate = computeHitRatePercent(d.hits, d.total);
                       return (
-                        <Cell
-                          key={i}
-                          fill={
-                            rate >= 75
-                              ? "#059669"
-                              : rate >= 50
-                              ? "#78716c"
-                              : "#dc2626"
-                          }
-                        />
+                        <div key={d.arrowNumber} className="text-center flex-1">
+                          <p className="text-xs text-stone-500">{d.arrowNumber}射目</p>
+                          <p className="font-bold text-stone-800">
+                            {formatHitRate(rate)}
+                          </p>
+                          <p className="text-xs text-stone-400">
+                            {d.hits}/{d.total}中
+                          </p>
+                        </div>
                       );
                     })}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-              <div className="flex gap-4 mt-3">
-                {arrowStats.map((d) => {
-                  const rate = computeHitRatePercent(d.hits, d.total);
-                  return (
-                    <div key={d.arrowNumber} className="text-center flex-1">
-                      <p className="text-xs text-stone-500">{d.arrowNumber}射目</p>
-                      <p className="font-bold text-stone-800">
-                        {formatHitRate(rate)}
-                      </p>
-                      <p className="text-xs text-stone-400">
-                        {d.hits}/{d.total}中
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -468,7 +546,7 @@ export default function IndividualAnalysisPage() {
                 <p className="text-xs font-medium text-stone-500 uppercase tracking-wide">
                   統計パターン検出
                 </p>
-                {generatePatternComments(chartData, arrowStats).map(
+                {generatePatternComments(filteredData, arrowStats).map(
                   (comment, i) => (
                     <Badge
                       key={i}
@@ -505,36 +583,27 @@ function generatePatternComments(
 
   const weakArrow = arrowStats
     .filter((a) => a.total > 0)
-    .sort(
-      (a, b) => a.hits / a.total - b.hits / b.total
-    )[0];
+    .sort((a, b) => a.hits / a.total - b.hits / b.total)[0];
   if (weakArrow && weakArrow.total > 0) {
     const rate = computeHitRatePercent(weakArrow.hits, weakArrow.total);
     if (rate < 50) {
-      comments.push(
-        `${weakArrow.arrowNumber}射目が弱点（${formatHitRate(rate)}）`
-      );
+      comments.push(`${weakArrow.arrowNumber}射目が弱点（${formatHitRate(rate)}）`);
     }
   }
 
   const strongArrow = arrowStats
     .filter((a) => a.total > 0)
-    .sort(
-      (a, b) => b.hits / b.total - a.hits / a.total
-    )[0];
+    .sort((a, b) => b.hits / b.total - a.hits / a.total)[0];
   if (strongArrow && strongArrow.total > 0) {
     const rate = computeHitRatePercent(strongArrow.hits, strongArrow.total);
     if (rate >= 75) {
-      comments.push(
-        `${strongArrow.arrowNumber}射目が得意（${formatHitRate(rate)}）`
-      );
+      comments.push(`${strongArrow.arrowNumber}射目が得意（${formatHitRate(rate)}）`);
     }
   }
 
   if (chartData.length > 0) {
     const latest = chartData[chartData.length - 1].hitRate;
-    const avg =
-      chartData.reduce((s, d) => s + d.hitRate, 0) / chartData.length;
+    const avg = chartData.reduce((s, d) => s + d.hitRate, 0) / chartData.length;
     if (latest > avg + 15) comments.push("直近の調子が平均を大きく上回っている");
     if (latest < avg - 15) comments.push("直近の調子が平均を大きく下回っている");
   }
