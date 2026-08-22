@@ -156,6 +156,17 @@ export default function IndividualAnalysisPage() {
     ? filteredData.reduce((sum, d) => sum + d.hitRate, 0) / filteredData.length
     : null;
 
+  /**
+   * 種別ごとに別々の dataKey を持つ形式に変換。
+   * connectNulls と組み合わせて「同種別の点だけをつなぐ折れ線」を3本描く。
+   */
+  const multiLineData = useMemo(() => chartData.map((d) => ({
+    ...d,
+    hitRatePUBLIC:    d.type === "PUBLIC"    ? d.hitRate : null,
+    hitRatePRACTICE:  d.type === "PRACTICE"  ? d.hitRate : null,
+    hitRateSELECTION: d.type === "SELECTION" ? d.hitRate : null,
+  })), [chartData]);
+
   async function runAiAnalysis() {
     if (!selectedMember || filteredData.length === 0) {
       setAiError("部員を選び、的中データがある状態で実行してください");
@@ -317,19 +328,26 @@ export default function IndividualAnalysisPage() {
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <CardTitle className="text-base">的中率推移</CardTitle>
                 <div className="flex gap-3 text-xs text-stone-500">
-                  {TYPE_FILTER_OPTIONS.filter((o) => o.color).map((o) => (
-                    <span key={o.value} className="flex items-center gap-1">
-                      <span className="inline-block size-2.5 rounded-full" style={{ backgroundColor: o.color }} />
-                      {o.label}
-                    </span>
-                  ))}
+                  {TYPE_FILTER_OPTIONS.filter((o) => o.color).map((o) => {
+                    const active = typeFilter === "ALL" || typeFilter === o.value;
+                    return (
+                      <span
+                        key={o.value}
+                        className="flex items-center gap-1 transition-opacity"
+                        style={{ opacity: active ? 1 : 0.35 }}
+                      >
+                        <span className="inline-block size-2.5 rounded-full" style={{ backgroundColor: o.color }} />
+                        {o.label}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={260}>
+              <ResponsiveContainer width="100%" height={280}>
                 <LineChart
-                  data={chartData}
+                  data={typeFilter === "ALL" ? chartData : multiLineData}
                   margin={{ top: 8, right: 16, bottom: 40, left: 0 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
@@ -346,19 +364,21 @@ export default function IndividualAnalysisPage() {
                     tick={{ fontSize: 11 }}
                   />
                   <Tooltip
-                    formatter={(value, _name, props) => {
-                      const d = props.payload as ChartDataPoint;
-                      return [
-                        `${formatHitRate(Number(value))}（${d.hits}/${d.total}中）`,
-                        "的中率",
-                      ];
-                    }}
-                    labelFormatter={(label, payload) => {
-                      if (payload?.[0]) {
-                        const d = payload[0].payload as ChartDataPoint;
-                        return `${label}（${tournamentTypeLabel(d.type)}）`;
-                      }
-                      return label;
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null;
+                      const entry = payload.find((p) => p.value != null);
+                      if (!entry) return null;
+                      const d = entry.payload as ChartDataPoint;
+                      return (
+                        <div className="bg-white border border-stone-200 rounded-md shadow-sm px-3 py-2 text-xs">
+                          <p className="font-medium text-stone-600 mb-1">
+                            {label}（{tournamentTypeLabel(d.type)}）
+                          </p>
+                          <p className="font-bold" style={{ color: TYPE_COLOR[d.type] ?? "#292524" }}>
+                            {formatHitRate(Number(entry.value))}　{d.hits}/{d.total}中
+                          </p>
+                        </div>
+                      );
                     }}
                   />
                   {avgHitRate !== null && (
@@ -374,42 +394,81 @@ export default function IndividualAnalysisPage() {
                       }}
                     />
                   )}
-                  <Line
-                    type="monotone"
-                    dataKey="hitRate"
-                    stroke="#d6d3d1"
-                    strokeWidth={1.5}
-                    dot={(props) => {
-                      const { cx, cy, payload } = props;
-                      const matched = typeFilter === "ALL" || payload.type === typeFilter;
-                      const fill = TYPE_COLOR[payload.type] ?? "#78716c";
-                      if (matched) {
+
+                  {/* すべて：全点を1本の線でつなぎ、点は種別カラーで色分け */}
+                  {typeFilter === "ALL" && (
+                    <Line
+                      type="monotone"
+                      dataKey="hitRate"
+                      stroke="#d6d3d1"
+                      strokeWidth={2}
+                      dot={(props) => {
+                        const { cx, cy, payload } = props;
+                        const fill = TYPE_COLOR[payload.type] ?? "#78716c";
                         return (
                           <circle
-                            key={`dot-${payload.tournamentId}`}
-                            cx={cx} cy={cy} r={6}
+                            key={`all-${payload.tournamentId}`}
+                            cx={cx} cy={cy} r={5}
                             fill={fill}
                             stroke="#fff"
                             strokeWidth={2}
                           />
                         );
-                      }
-                      return (
-                        <circle
-                          key={`dot-${payload.tournamentId}`}
-                          cx={cx} cy={cy} r={4}
-                          fill="#d6d3d1"
-                          stroke="none"
-                          opacity={0.4}
-                        />
-                      );
-                    }}
-                    activeDot={(props) => {
-                      const { cx, cy, payload } = props as { cx: number; cy: number; payload: ChartDataPoint };
-                      const fill = TYPE_COLOR[payload.type] ?? "#78716c";
-                      return <circle cx={cx} cy={cy} r={8} fill={fill} stroke="#fff" strokeWidth={2} />;
-                    }}
-                  />
+                      }}
+                      activeDot={(props) => {
+                        const { cx, cy, payload } = props as { cx: number; cy: number; payload: ChartDataPoint };
+                        const fill = TYPE_COLOR[payload.type] ?? "#78716c";
+                        return <circle cx={cx} cy={cy} r={7} fill={fill} stroke="#fff" strokeWidth={2} />;
+                      }}
+                    />
+                  )}
+
+                  {/* 種別選択時：各種別を別線で描画（connectNulls で同種別の点だけをつなぐ） */}
+                  {typeFilter !== "ALL" && (["PUBLIC", "PRACTICE", "SELECTION"] as const).map((type) => {
+                    const color = TYPE_COLOR[type];
+                    const active = typeFilter === type;
+                    return (
+                      <Line
+                        key={type}
+                        type="monotone"
+                        dataKey={`hitRate${type}` as "hitRatePUBLIC" | "hitRatePRACTICE" | "hitRateSELECTION"}
+                        stroke={color}
+                        strokeWidth={active ? 2.5 : 1}
+                        strokeOpacity={active ? 1 : 0.2}
+                        connectNulls
+                        dot={(props) => {
+                          const { cx, cy, value } = props;
+                          // null 値のとき cy が NaN になるので描画しない
+                          if (value == null || !isFinite(cy)) return <g key={`${type}-${props.index}`} />;
+                          if (active) {
+                            return (
+                              <circle
+                                key={`${type}-${props.index}`}
+                                cx={cx} cy={cy} r={5}
+                                fill={color}
+                                stroke="#fff"
+                                strokeWidth={2}
+                              />
+                            );
+                          }
+                          return (
+                            <circle
+                              key={`${type}-${props.index}`}
+                              cx={cx} cy={cy} r={3}
+                              fill={color}
+                              opacity={0.25}
+                            />
+                          );
+                        }}
+                        activeDot={active ? {
+                          r: 7,
+                          fill: color,
+                          stroke: "#fff",
+                          strokeWidth: 2,
+                        } : false}
+                      />
+                    );
+                  })}
                 </LineChart>
               </ResponsiveContainer>
             </CardContent>
