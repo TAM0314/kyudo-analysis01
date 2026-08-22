@@ -531,8 +531,8 @@ function HitRateBar({
   color: string;
 }) {
   const width = total > 0 ? Math.min(100, Math.max(0, rate)) : 0;
-  const label =
-    total > 0 ? `${formatHitRate(rate)}（${hits}/${total}中）` : "データなし";
+  const shortLabel = total > 0 ? formatHitRate(rate) : "—";
+  const fullLabel  = total > 0 ? `${formatHitRate(rate)}（${hits}/${total}中）` : "データなし";
 
   return (
     <div className="min-w-0 flex items-center gap-2">
@@ -545,8 +545,12 @@ function HitRateBar({
           }}
         />
       </div>
-      <span className="shrink-0 w-[7.5rem] text-right text-xs font-semibold text-stone-800 tabular-nums whitespace-nowrap">
-        {label}
+      {/* モバイル：パーセントのみ / デスクトップ：詳細表示 */}
+      <span className="shrink-0 w-[3rem] sm:hidden text-right text-xs font-semibold text-stone-800 tabular-nums whitespace-nowrap">
+        {shortLabel}
+      </span>
+      <span className="shrink-0 w-[7.5rem] hidden sm:inline text-right text-xs font-semibold text-stone-800 tabular-nums whitespace-nowrap">
+        {fullLabel}
       </span>
     </div>
   );
@@ -579,7 +583,7 @@ function GenderRoundSection({
         <span className="text-xs text-stone-400">（{rows.length}立）</span>
       </div>
 
-      <div className="grid grid-cols-[4.5rem_1fr_2.75rem_1fr] gap-x-2 gap-y-1 text-xs text-stone-500 mb-1">
+      <div className="grid grid-cols-[3rem_1fr_2rem_1fr] sm:grid-cols-[4.5rem_1fr_2.75rem_1fr] gap-x-2 gap-y-1 text-xs text-stone-500 mb-1">
         <span>立順</span>
         <span className="text-center">1回目</span>
         <span className="text-center">変化</span>
@@ -592,7 +596,7 @@ function GenderRoundSection({
           return (
             <div
               key={shortLabel}
-              className="grid grid-cols-[4.5rem_1fr_2.75rem_1fr] gap-x-2 items-center"
+              className="grid grid-cols-[3rem_1fr_2rem_1fr] sm:grid-cols-[4.5rem_1fr_2.75rem_1fr] gap-x-2 items-center"
             >
               <span className="text-sm font-medium text-stone-800 truncate">
                 {shortLabel}
