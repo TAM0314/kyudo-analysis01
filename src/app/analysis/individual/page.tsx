@@ -439,7 +439,7 @@ export default function IndividualAnalysisPage() {
                         dot={(props) => {
                           const { cx, cy, value } = props;
                           // null 値のとき cy が NaN になるので描画しない
-                          if (value == null || !isFinite(cy)) return <g key={`${type}-${props.index}`} />;
+                          if (value == null || cy == null || !isFinite(cy)) return <g key={`${type}-${props.index}`} />;
                           if (active) {
                             return (
                               <circle
