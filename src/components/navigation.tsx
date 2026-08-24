@@ -11,6 +11,7 @@ const links = [
   { href: "/input", label: "データ入力" },
   { href: "/analysis/individual", label: "個人分析" },
   { href: "/analysis/team", label: "チーム分析" },
+  { href: "/ranking", label: "ランキング" },
   { href: "/members", label: "部員管理" },
   { href: "/settings", label: "設定" },
 ];
