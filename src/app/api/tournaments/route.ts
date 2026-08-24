@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { TournamentType } from "@/generated/prisma/client";
+import {
+  isValidTournamentType,
+  parseValidDate,
+  isPrismaError,
+  PRISMA_UNIQUE_VIOLATION,
+} from "@/lib/validate";
 
 export async function GET() {
   const tournaments = await prisma.tournament.findMany({
@@ -19,20 +24,45 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const { name, type, date, note } = body;
 
-  if (!name || !type || !date) {
+  if (!name || typeof name !== "string" || !name.trim()) {
     return NextResponse.json(
-      { error: "\u5927\u4f1a\u540d\u30fb\u7a2e\u5225\u30fb\u65e5\u4ed8\u306f\u5fc5\u9808\u3067\u3059" },
+      { error: "大会名は必須です" },
       { status: 400 }
     );
   }
 
-  const tournament = await prisma.tournament.create({
-    data: {
-      name,
-      type: type as TournamentType,
-      date: new Date(date),
-      note: note ?? null,
-    },
-  });
-  return NextResponse.json(tournament, { status: 201 });
+  if (!isValidTournamentType(type)) {
+    return NextResponse.json(
+      { error: "種別は PUBLIC・PRACTICE・SELECTION のいずれかを指定してください" },
+      { status: 400 }
+    );
+  }
+
+  const parsedDate = parseValidDate(date);
+  if (!parsedDate) {
+    return NextResponse.json(
+      { error: "日付が無効です（例: 2024-04-01）" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const tournament = await prisma.tournament.create({
+      data: {
+        name: name.trim(),
+        type,
+        date: parsedDate,
+        note: note && typeof note === "string" ? note.trim() || null : null,
+      },
+    });
+    return NextResponse.json(tournament, { status: 201 });
+  } catch (e) {
+    if (isPrismaError(e, PRISMA_UNIQUE_VIOLATION)) {
+      return NextResponse.json(
+        { error: "同じ大会が既に存在します" },
+        { status: 409 }
+      );
+    }
+    throw e;
+  }
 }

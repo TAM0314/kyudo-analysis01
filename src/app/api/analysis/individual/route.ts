@@ -1,18 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { computeHitRatePercent } from "@/lib/utils";
+import { parsePositiveInt } from "@/lib/validate";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const memberId = searchParams.get("memberId");
-  const limit = Number(searchParams.get("limit") ?? "10");
+  const memberIdRaw = searchParams.get("memberId");
+  const limitRaw = searchParams.get("limit");
 
-  if (!memberId) {
-    return NextResponse.json({ error: "memberId?????" }, { status: 400 });
+  const memberId = parsePositiveInt(memberIdRaw);
+  if (memberId === null) {
+    return NextResponse.json(
+      { error: "memberId は必須です（1以上の整数）" },
+      { status: 400 }
+    );
   }
 
+  const limit = limitRaw ? (parsePositiveInt(limitRaw) ?? 10) : 10;
+
   const entries = await prisma.entry.findMany({
-    where: { memberId: Number(memberId) },
+    where: { memberId },
     include: {
       shots: { orderBy: { arrowNumber: "asc" } },
       round: {

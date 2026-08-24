@@ -62,6 +62,7 @@ export default function SettingsPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const [confirmText, setConfirmText] = useState("");
+  const [deletePassword, setDeletePassword] = useState("");
 
   const fetchSummary = useCallback(async () => {
     const res = await fetch("/api/data");
@@ -109,12 +110,19 @@ export default function SettingsPage() {
     ids?: number[],
     confirm?: string
   ) {
+    if (!deletePassword) {
+      setDeleteMessage("削除パスワードを入力してください");
+      return;
+    }
     setDeleting(true);
     setDeleteMessage(null);
     try {
       const res = await fetch("/api/data", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${deletePassword}`,
+        },
         body: JSON.stringify({ scope, ids, confirm }),
       });
       const data = await res.json();
@@ -267,6 +275,24 @@ export default function SettingsPage() {
           <CardTitle className="text-base">部分消去</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* 削除パスワード */}
+          <div className="flex items-end gap-3 p-3 bg-amber-50 border border-amber-200 rounded-md">
+            <div className="flex-1 space-y-1">
+              <Label htmlFor="delete-password" className="text-sm font-medium text-amber-800">
+                削除パスワード
+              </Label>
+              <Input
+                id="delete-password"
+                type="password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                placeholder="パスワードを入力してから削除操作を行ってください"
+                className="bg-white max-w-sm"
+                disabled={deleting}
+              />
+            </div>
+          </div>
+
           {deleteMessage && (
             <div
               className={`text-sm rounded p-3 ${
@@ -454,6 +480,9 @@ export default function SettingsPage() {
           <CardTitle className="text-base text-red-700">全消去</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+            ※ 上の「削除パスワード」欄に入力してから操作してください
+          </p>
           <p className="text-sm text-stone-500">
             部員・大会・立ち・出場記録・矢記録をすべて消去します。
             この操作は取り消せません。事前にExcelエクスポートでバックアップしてください。

@@ -1,20 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { computeHitRatePercent } from "@/lib/utils";
+import { parsePositiveInt } from "@/lib/validate";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const tournamentId = searchParams.get("tournamentId");
+  const tournamentIdRaw = searchParams.get("tournamentId");
 
-  if (!tournamentId) {
+  const tournamentId = parsePositiveInt(tournamentIdRaw);
+  if (tournamentId === null) {
     return NextResponse.json(
-      { error: "tournamentId?????" },
+      { error: "tournamentId は必須です（1以上の整数）" },
       { status: 400 }
     );
   }
 
   const tournament = await prisma.tournament.findUnique({
-    where: { id: Number(tournamentId) },
+    where: { id: tournamentId },
     include: {
       rounds: {
         orderBy: { roundNumber: "asc" },
@@ -32,7 +34,7 @@ export async function GET(req: NextRequest) {
   });
 
   if (!tournament) {
-    return NextResponse.json({ error: "??????????" }, { status: 404 });
+    return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
   }
 
   const roundStats = tournament.rounds.map((round) => {
@@ -52,7 +54,7 @@ export async function GET(req: NextRequest) {
     return {
       roundId: round.id,
       roundNumber: round.roundNumber,
-      label: round.label ?? `${round.roundNumber}???`,
+      label: round.label ?? `${round.roundNumber}立目`,
       hits,
       total,
       hitRate: computeHitRatePercent(hits, total),
