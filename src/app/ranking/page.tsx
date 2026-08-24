@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatHitRate } from "@/lib/utils";
+import { formatHitRateFixed } from "@/lib/utils";
 import type { RankingMember, RankingResponse } from "@/app/api/analysis/ranking/route";
 
 const TYPE_OPTIONS = [
@@ -111,7 +111,7 @@ function RankingTable({ title, members, sortKey, onSortChange }: RankingTablePro
                           sortKey === "hitRate" ? "text-stone-800" : "text-stone-500"
                         }`}
                       >
-                        {formatHitRate(m.hitRate)}
+                        {formatHitRateFixed(m.hitRate)}
                       </td>
                       <td
                         className={`px-3 py-2.5 text-right tabular-nums ${

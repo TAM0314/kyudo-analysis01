@@ -46,8 +46,15 @@ export function computeHitRatePercent(hits: number, total: number): number {
   return Math.round((hits / total) * 100000) / 1000;
 }
 
-/** 的中率表示: 小数第2位固定・第3位以降切り捨て（例: 66.666% → "66.66%"） */
+/** 的中率表示: 0%は「0%」、0%超は最大小数第3位（末尾0は省略） */
 export function formatHitRate(rate: number | null | undefined): string {
+  if (rate == null || !Number.isFinite(rate) || rate <= 0) return "0%";
+  const trimmed = Number(rate).toFixed(3).replace(/\.?0+$/, "");
+  return `${trimmed}%`;
+}
+
+/** ランキング用的中率表示: 小数第2位固定・第3位以降切り捨て（例: 66.666% → "66.66%"） */
+export function formatHitRateFixed(rate: number | null | undefined): string {
   if (rate == null || !Number.isFinite(rate)) return "0.00%";
   const truncated = Math.floor(rate * 100) / 100;
   return `${truncated.toFixed(2)}%`;
