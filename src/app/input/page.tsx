@@ -383,6 +383,13 @@ export default function InputPage() {
         </p>
       </div>
 
+      {/* エラーメッセージ（デモ時など） */}
+      {message && (
+        <div className="rounded-md px-4 py-3 text-sm font-medium bg-red-50 border border-red-200 text-red-700">
+          {message}
+        </div>
+      )}
+
       {/* Excelインポート */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
