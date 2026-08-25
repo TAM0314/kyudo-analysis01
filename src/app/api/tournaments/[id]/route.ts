@@ -115,6 +115,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   if (isDemoMode()) return demoResponse();
+  const { id } = await params;
   const tournamentId = parsePositiveInt(id);
   if (tournamentId === null) {
     return NextResponse.json({ error: "無効なIDです" }, { status: 400 });
