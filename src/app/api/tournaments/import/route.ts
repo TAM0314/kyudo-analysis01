@@ -8,6 +8,7 @@ import {
   uniqueTachiLabelsInOrder,
   splitRoundDisplayLabel,
 } from "@/lib/tournament-excel";
+import { isDemoMode, demoResponse } from "@/lib/demo";
 
 /** 結合セルの値を範囲内へ展開（立順の女D等が先頭行にしか無い場合に必要） */
 function expandMergedCells(ws: XLSX.WorkSheet): void {
@@ -48,6 +49,7 @@ function sheetToAoa(wb: XLSX.WorkBook, sheetName: string): unknown[][] {
 }
 
 export async function POST(req: NextRequest) {
+  if (isDemoMode()) return demoResponse();
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
   const listOnly = formData.get("listOnly") === "true";

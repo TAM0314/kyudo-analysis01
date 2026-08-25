@@ -7,8 +7,10 @@ import {
   PRISMA_NOT_FOUND,
   PRISMA_UNIQUE_VIOLATION,
 } from "@/lib/validate";
+import { isDemoMode, demoResponse } from "@/lib/demo";
 
 export async function POST(req: NextRequest) {
+  if (isDemoMode()) return demoResponse();
   const body = await req.json();
   const { roundId, memberId, positionInRound, shots } = body;
 

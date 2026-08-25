@@ -4,6 +4,7 @@ import "./globals.css";
 import { Navigation } from "@/components/navigation";
 import { Toaster } from "@/components/ui/toast";
 import { ClientProviders } from "@/components/ClientProviders";
+import { DemoBanner } from "@/components/DemoBanner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -24,6 +25,7 @@ export default function RootLayout({
     <html lang="ja" className={`${geistSans.variable} h-full antialiased`}>
       <body className="min-h-full bg-stone-50 text-stone-900">
         <ClientProviders>
+          <DemoBanner />
           <Navigation />
           <main className="max-w-5xl mx-auto px-4 py-8">{children}</main>
           <Toaster />

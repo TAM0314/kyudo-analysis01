@@ -7,6 +7,7 @@ import {
   isPrismaError,
   PRISMA_NOT_FOUND,
 } from "@/lib/validate";
+import { isDemoMode, demoResponse } from "@/lib/demo";
 
 export async function GET(
   _req: NextRequest,
@@ -45,6 +46,7 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (isDemoMode()) return demoResponse();
   const { id } = await params;
   const tournamentId = parsePositiveInt(id);
   if (tournamentId === null) {
@@ -53,7 +55,6 @@ export async function PUT(
 
   const body = await req.json();
   const { name, type, date, note } = body;
-
   const updateData: Record<string, unknown> = {};
 
   if (name !== undefined) {
@@ -113,7 +114,7 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
+  if (isDemoMode()) return demoResponse();
   const tournamentId = parsePositiveInt(id);
   if (tournamentId === null) {
     return NextResponse.json({ error: "無効なIDです" }, { status: 400 });

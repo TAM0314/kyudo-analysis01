@@ -6,6 +6,7 @@ import {
   isPrismaError,
   PRISMA_UNIQUE_VIOLATION,
 } from "@/lib/validate";
+import { isDemoMode, demoResponse } from "@/lib/demo";
 
 export async function GET() {
   const tournaments = await prisma.tournament.findMany({
@@ -21,17 +22,11 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  if (isDemoMode()) return demoResponse();
   const body = await req.json();
   const { name, type, date, note } = body;
 
   if (!name || typeof name !== "string" || !name.trim()) {
-    return NextResponse.json(
-      { error: "大会名は必須です" },
-      { status: 400 }
-    );
-  }
-
-  if (!isValidTournamentType(type)) {
     return NextResponse.json(
       { error: "種別は PUBLIC・PRACTICE・SELECTION のいずれかを指定してください" },
       { status: 400 }

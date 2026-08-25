@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import * as XLSX from "xlsx";
 import { Gender } from "@/generated/prisma/client";
+import { isDemoMode, demoResponse } from "@/lib/demo";
 
 /** Columns that must never be read (personal information) */
 const PRIVACY_HEADERS = new Set([
@@ -138,6 +139,7 @@ export async function GET() {
 
 /** POST: list sheets (listOnly) or import members. Never reads names. */
 export async function POST(req: NextRequest) {
+  if (isDemoMode()) return demoResponse();
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
   const listOnly = formData.get("listOnly") === "true";

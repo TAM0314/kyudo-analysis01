@@ -7,11 +7,13 @@ import {
   PRISMA_UNIQUE_VIOLATION,
   parsePositiveInt,
 } from "@/lib/validate";
+import { isDemoMode, demoResponse } from "@/lib/demo";
 
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (isDemoMode()) return demoResponse();
   const { id } = await params;
   const memberId = parsePositiveInt(id);
   if (memberId === null) {
@@ -86,6 +88,7 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (isDemoMode()) return demoResponse();
   const { id } = await params;
   const memberId = parsePositiveInt(id);
   if (memberId === null) {

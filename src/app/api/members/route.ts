@@ -6,6 +6,7 @@ import {
   PRISMA_UNIQUE_VIOLATION,
   parsePositiveInt,
 } from "@/lib/validate";
+import { isDemoMode, demoResponse } from "@/lib/demo";
 
 export async function GET() {
   const members = await prisma.member.findMany({
@@ -15,6 +16,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  if (isDemoMode()) return demoResponse();
   const body = await req.json();
   const { number, gender, grade } = body;
 

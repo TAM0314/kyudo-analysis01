@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import * as XLSX from "xlsx";
 import { ShotResult, TournamentType, Gender } from "@/generated/prisma/client";
+import { isDemoMode, demoResponse } from "@/lib/demo";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -76,6 +77,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  if (isDemoMode()) return demoResponse();
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
 

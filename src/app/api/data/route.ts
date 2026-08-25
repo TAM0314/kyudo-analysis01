@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isDemoMode, demoResponse } from "@/lib/demo";
 
 export async function GET() {
   const [memberCount, tournamentCount, roundCount, entryCount, shotCount] =
@@ -66,6 +67,7 @@ function checkDeleteAuth(req: NextRequest): NextResponse | null {
 }
 
 export async function POST(req: NextRequest) {
+  if (isDemoMode()) return demoResponse();
   const authError = checkDeleteAuth(req);
   if (authError) return authError;
 
