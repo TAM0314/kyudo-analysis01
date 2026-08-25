@@ -163,6 +163,10 @@ export default function InputPage() {
       }),
     });
     const t = await res.json();
+    if (!res.ok) {
+      setMessage(t.error ?? "大会の作成に失敗しました");
+      return;
+    }
     await fetchTournaments();
     setSelectedTournamentId(t.id);
     setShowNewTournament(false);
@@ -183,6 +187,10 @@ export default function InputPage() {
       }),
     });
     const round = await res.json();
+    if (!res.ok) {
+      setMessage(round.error ?? "立ちの作成に失敗しました");
+      return;
+    }
     await fetchTournaments();
     setSelectedRoundId(round.id);
     setShowNewRound(false);
@@ -245,7 +253,7 @@ export default function InputPage() {
       const shots = entry.shots
         .filter((s) => s.result !== null)
         .map((s) => ({ arrowNumber: s.arrowNumber, result: s.result }));
-      await fetch("/api/entries", {
+      const res = await fetch("/api/entries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -255,6 +263,12 @@ export default function InputPage() {
           shots,
         }),
       });
+      if (!res.ok) {
+        const data = await res.json();
+        setSaving(false);
+        setMessage(data.error ?? "保存に失敗しました");
+        return;
+      }
     }
 
     setSaving(false);
