@@ -117,6 +117,9 @@ export default function InputPage() {
   const [relabeling, setRelabeling] = useState(false);
   const [relabelMessage, setRelabelMessage] = useState<string | null>(null);
   const [relabelDiagnostics, setRelabelDiagnostics] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [previewInfo, setPreviewInfo] = useState<any | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
 
   const fetchTournaments = useCallback(async () => {
@@ -281,18 +284,40 @@ export default function InputPage() {
     setSheetNames([]);
     setSelectedSheet("");
     setImportName("");
+    setPreviewInfo(null);
     if (importFileRef.current) importFileRef.current.value = "";
   }
 
-  async function handleImportFileSelected(
-    e: React.ChangeEvent<HTMLInputElement>
-  ) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  async function fetchPreview(fileObj: File, sheetNameStr: string) {
+    if (!fileObj || !sheetNameStr) return;
+    setPreviewing(true);
+    setPreviewInfo(null);
+    const formData = new FormData();
+    formData.append("file", fileObj);
+    formData.append("sheetName", sheetNameStr);
+    formData.append("previewOnly", "true");
+    try {
+      const res = await fetch("/api/tournaments/import", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      setPreviewInfo(data);
+      if (data.ok && data.titleHint && !importName) {
+        setImportName(data.titleHint);
+      }
+    } catch {
+      setPreviewInfo({ error: "プレビューの取得に失敗しました" });
+    }
+    setPreviewing(false);
+  }
+
+  async function processFile(file: File) {
     clearResult();
     setImportFile(file);
     setSheetNames([]);
     setSelectedSheet("");
+    setPreviewInfo(null);
     setListingSheets(true);
 
     const formData = new FormData();
@@ -308,13 +333,43 @@ export default function InputPage() {
       if (!res.ok) {
         clearImportForm();
       } else {
-        setSheetNames(data.sheets ?? []);
-        setSelectedSheet(data.suggested ?? data.sheets?.[0] ?? "");
+        const sheets = data.sheets ?? [];
+        setSheetNames(sheets);
+        const suggested = data.suggested ?? sheets[0] ?? "";
+        setSelectedSheet(suggested);
+        if (suggested) {
+          fetchPreview(file, suggested);
+        }
       }
     } catch {
       clearImportForm();
     }
     setListingSheets(false);
+  }
+
+  async function handleImportFileSelected(
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    processFile(file);
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(true);
+  }
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+  }
+  async function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processFile(file);
+    }
   }
 
   async function runTournamentImport() {
@@ -404,48 +459,65 @@ export default function InputPage() {
         </CardHeader>
         {showImport && (
           <CardContent className="space-y-4">
-            <p className="text-sm text-stone-500">
-              立順・番号・性別・1回目/2回目の○×を読み込みます。氏名は読みません。
-              立順は「女D」「男A」などを優先し、結合セルも読み取ります。
-              立順が空のときだけ自動で「立1」「立2」…を付与します。
-              未登録の番号は部員として自動追加し、決勝射詰めは無視します。
-            </p>
-
-            <div className="flex flex-wrap gap-3 items-center">
-              <Label
-                htmlFor="tournament-import-file"
-                className="cursor-pointer inline-flex items-center px-4 py-2 bg-stone-100 hover:bg-stone-200 rounded-md text-sm font-medium"
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <p className="text-sm text-stone-500">
+                立順・番号・性別・1回目/2回目の○×を読み込みます。氏名は読みません。
+                立順は「女D」「男A」などを優先し、結合セルも読み取ります。
+              </p>
+              <a
+                href="/api/tournaments/import"
+                download="kyudo_tournament_template.xlsx"
+                className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1 shrink-0 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-md font-medium"
               >
-                {listingSheets
-                  ? "シート確認中..."
-                  : importFile
-                    ? "別のファイルを選ぶ"
-                    : "Excelファイルを選択"}
-              </Label>
-              <Input
-                id="tournament-import-file"
-                ref={importFileRef}
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={handleImportFileSelected}
-                disabled={importing || listingSheets || relabeling}
-              />
-              {importFile && (
-                <span className="text-sm text-stone-500 truncate max-w-xs">
-                  {importFile.name}
-                </span>
-              )}
+                📥 大会結果Excelテンプレート
+              </a>
+            </div>
+
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+                isDragging ? "border-stone-800 bg-stone-100" : "border-stone-300 hover:border-stone-400 bg-stone-50"
+              }`}
+            >
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-sm font-medium text-stone-700">
+                  {importFile ? importFile.name : "Excelファイルをここにドラッグ＆ドロップ"}
+                </p>
+                <p className="text-xs text-stone-400">または</p>
+                <Label
+                  htmlFor="tournament-import-file"
+                  className="cursor-pointer inline-flex items-center px-4 py-2 bg-white hover:bg-stone-50 border rounded-md text-sm font-medium text-stone-700 shadow-sm"
+                >
+                  {listingSheets ? "シート確認中..." : importFile ? "別のファイルを選ぶ" : "ファイルを選択"}
+                </Label>
+                <Input
+                  id="tournament-import-file"
+                  ref={importFileRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={handleImportFileSelected}
+                  disabled={importing || listingSheets || relabeling}
+                />
+              </div>
             </div>
 
             {sheetNames.length > 0 && (
-              <div className="space-y-3 border rounded-md p-4 bg-stone-50">
+              <div className="space-y-4 border rounded-md p-4 bg-stone-50">
                 <div className="grid md:grid-cols-2 gap-3">
                   <div>
                     <Label>読み込むシート</Label>
                     <Select
                       value={selectedSheet}
-                      onValueChange={(v) => setSelectedSheet(v ?? "")}
+                      onValueChange={(v) => {
+                        const s = v ?? "";
+                        setSelectedSheet(s);
+                        if (importFile && s) {
+                          fetchPreview(importFile, s);
+                        }
+                      }}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="シートを選択" />
@@ -494,9 +566,58 @@ export default function InputPage() {
                     />
                   </div>
                 </div>
+
+                {previewing && (
+                  <div className="text-sm text-stone-500 text-center py-2 animate-pulse">
+                    プレビューを解析中...
+                  </div>
+                )}
+
+                {previewInfo && (
+                  <div className="border rounded-md p-4 bg-white space-y-3 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold text-stone-800">
+                        📊 インポートプレビュー確認
+                      </span>
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${previewInfo.ok && previewInfo.rowsCount > 0 ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                        {previewInfo.ok && previewInfo.rowsCount > 0 ? `取込可能行数: ${previewInfo.rowsCount}行` : "要確認 / 0行"}
+                      </span>
+                    </div>
+                    {previewInfo.titleHint && (
+                      <p className="text-xs text-stone-600">
+                        <span className="font-semibold">大会名候補:</span> {previewInfo.titleHint}
+                      </p>
+                    )}
+                    {previewInfo.tachiLabels?.length > 0 && (
+                      <p className="text-xs text-stone-600">
+                        <span className="font-semibold">検出立順:</span> {previewInfo.tachiLabels.join("、")}
+                      </p>
+                    )}
+                    {previewInfo.warnings?.length > 0 && (
+                      <div className="text-xs bg-amber-50 text-amber-800 p-2 rounded border border-amber-200">
+                        <p className="font-semibold mb-1">注意・警告 ({previewInfo.warnings.length}件):</p>
+                        <ul className="list-disc pl-4 space-y-0.5 max-h-24 overflow-y-auto">
+                          {previewInfo.warnings.map((w: string, idx: number) => (
+                            <li key={idx}>{w}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {previewInfo.diagnosticText && (
+                      <details className="text-xs text-stone-500">
+                        <summary className="cursor-pointer font-medium text-stone-700">詳細診断・サンプル行を表示</summary>
+                        <pre className="mt-1 bg-stone-900 text-stone-100 p-2 rounded overflow-x-auto whitespace-pre-wrap max-h-40">
+                          {previewInfo.diagnosticText}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+                )}
+
                 <Button
                   onClick={runTournamentImport}
                   disabled={importing || relabeling || !selectedSheet}
+                  className="w-full sm:w-auto"
                 >
                   {importing ? "取り込み中..." : "この内容で取り込む（新規）"}
                 </Button>

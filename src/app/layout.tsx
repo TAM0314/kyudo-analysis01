@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { Navigation } from "@/components/navigation";
 import { Toaster } from "@/components/ui/toast";
 import { ClientProviders } from "@/components/ClientProviders";
 import { DemoBanner } from "@/components/DemoBanner";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
   subsets: ["latin"],
 });
 
@@ -22,7 +21,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ja" className={`${geistSans.variable} h-full antialiased`}>
+    <html lang="ja" className={`${inter.className} h-full antialiased`}>
       <body className="min-h-full bg-stone-50 text-stone-900">
         <ClientProviders>
           <DemoBanner />

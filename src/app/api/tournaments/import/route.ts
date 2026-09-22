@@ -48,11 +48,34 @@ function sheetToAoa(wb: XLSX.WorkBook, sheetName: string): unknown[][] {
   });
 }
 
+export async function GET() {
+  const aoa = [
+    ["大会結果サンプル", "", "", "", "", "", "", "", "", "", "", "", ""],
+    ["立順", "番号", "性別", "1回目", "", "", "", "2回目", "", "", "", "", ""],
+    ["", "", "", "1射", "2射", "3射", "4射", "1射", "2射", "3射", "4射", "", ""],
+    ["男A", 1, "男", "○", "○", "×", "/", "○", "○", "○", "○", "", ""],
+    ["男A", 2, "男", "○", "×", "○", "○", "×", "○", "/", "○", "", ""],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "大会結果");
+  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+  return new NextResponse(buf, {
+    headers: {
+      "Content-Type":
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition":
+        'attachment; filename="kyudo_tournament_template.xlsx"',
+    },
+  });
+}
+
 export async function POST(req: NextRequest) {
   if (isDemoMode()) return demoResponse();
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
   const listOnly = formData.get("listOnly") === "true";
+  const previewOnly = formData.get("previewOnly") === "true";
   const relabelOnly = formData.get("relabelOnly") === "true";
   const sheetNameRaw = formData.get("sheetName");
   const requestedSheet =
@@ -102,6 +125,21 @@ export async function POST(req: NextRequest) {
   const sheetName = requestedSheet ?? wb.SheetNames[0];
   const aoa = sheetToAoa(wb, sheetName);
   const parsed = parseTournamentResultSheet(aoa);
+
+  if (previewOnly) {
+    return NextResponse.json({
+      ok: true,
+      preview: true,
+      sheetName,
+      titleHint: parsed.titleHint,
+      rowsCount: parsed.rows.length,
+      tachiLabels: uniqueTachiLabelsInOrder(parsed.rows),
+      warnings: parsed.warnings,
+      diagnostics: parsed.diagnostics,
+      diagnosticText: formatParseDiagnostics(parsed.diagnostics),
+      sampleRows: parsed.rows.slice(0, 10),
+    });
+  }
 
   if (parsed.rows.length === 0) {
     return NextResponse.json(
