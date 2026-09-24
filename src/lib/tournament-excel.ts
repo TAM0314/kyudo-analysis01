@@ -7,8 +7,7 @@ export interface ParsedArcherRow {
   positionInTachi: number;
   memberNumber: number;
   gender: Gender;
-  round1: (ParsedShot | null)[];
-  round2: (ParsedShot | null)[];
+  rounds: (ParsedShot | null)[][];
 }
 
 export interface ParseDiagnostics {
@@ -23,8 +22,7 @@ export interface ParseDiagnostics {
   headerRowPreview: string[];
   subHeaderPreview: string[];
   shotDetectMethod: "subheader_1_2_3_4" | "fallback_layout" | "none";
-  round1Cols: number[]; // 0-based
-  round2Cols: number[];
+  roundCols: number[][]; // 0-based
   scannedRows: number;
   acceptedRows: number;
   skipCounts: {
@@ -41,19 +39,154 @@ export interface ParseDiagnostics {
     tachi: string;
     numberRaw: string;
     genderRaw: string;
-    round1Raw: string[];
-    round2Raw: string[];
+    roundRaws: string[][];
     skipReason: string | null;
   }>;
   likelyCause: string | null;
   warnings: string[];
 }
 
-export interface ParseTournamentExcelResult {
+export interface ParsedSelectionRound {
+  dateKey: string;
+  shots: (ShotResult | null)[];
+}
+
+export interface ParsedSelectionArcherRow {
+  memberNumber: number;
+  previousRank?: string;
+  currentRank?: string;
+  overallHitRate?: number;
+  overallRank?: number;
+  rounds: ParsedSelectionRound[];
+}
+
+export interface ParseSelectionExcelResult {
   titleHint: string | null;
-  rows: ParsedArcherRow[];
+  rows: ParsedSelectionArcherRow[];
+  dateColumns: { colIndex: number; label: string }[];
   warnings: string[];
-  diagnostics: ParseDiagnostics;
+}
+
+/**
+ * 校内選考用Excelシート（前回ランク、的中ランク、的中率、順位、no、日付別的中率列など）のパーサー
+ */
+export function parseSelectionExcelSheet(
+  aoa: unknown[][]
+): ParseSelectionExcelResult {
+  const warnings: string[] = [];
+  let titleHint: string | null = null;
+
+  for (let r = 0; r < Math.min(5, aoa.length); r++) {
+    const joined = (aoa[r] ?? []).map(cellStr).filter(Boolean).join(" ");
+    if (joined) {
+      titleHint = joined.slice(0, 80);
+      break;
+    }
+  }
+
+  let headerRow = -1;
+  let numberCol = -1;
+  let prevRankCol = -1;
+  let currRankCol = -1;
+  const dateCols: { colIndex: number; label: string }[] = [];
+
+  for (let r = 0; r < Math.min(15, aoa.length); r++) {
+    const row = aoa[r] ?? [];
+    for (let c = 0; c < row.length; c++) {
+      const v = cellStr(row[c]);
+      if (v === "no" || v === "No" || v === "番号" || v === "部員番号") {
+        headerRow = r;
+        numberCol = c;
+      }
+      if (v === "前回ランク") prevRankCol = c;
+      if (v === "的中ランク") currRankCol = c;
+    }
+    if (headerRow >= 0) {
+      // ヘッダー行またはその周辺で日付列（例: 916, 917 や 9/16 など）を検知
+      const headerRowCells = aoa[headerRow] ?? [];
+      const topRowCells = r > 0 ? aoa[r - 1] ?? [] : [];
+      for (let c = 0; c < headerRowCells.length; c++) {
+        const val = cellStr(headerRowCells[c]);
+        const topVal = cellStr(topRowCells[c]);
+        const combined = topVal ? `${topVal} ${val}` : val;
+        // 3桁以上の数字（例: 916）や日付パターン
+        if (/^\d{3,4}$/.test(val) || /^\d{1,2}\/\d{1,2}$/.test(val) || /^\d{3,4}$/.test(combined)) {
+          const label = /^\d{3,4}$/.test(val) && val.length === 3 
+            ? `${val[0]}/${val.slice(1)}` 
+            : /^\d{4}$/.test(val) 
+            ? `${val.slice(0, 2)}/${val.slice(2)}` 
+            : val;
+          dateCols.push({ colIndex: c, label });
+        }
+      }
+      break;
+    }
+  }
+
+  if (headerRow < 0 || numberCol < 0) {
+    return { titleHint, rows: [], dateColumns: [], warnings: ["校内選考形式のヘッダー（no / 番号）が見つかりません"] };
+  }
+
+  // もしヘッダー行で日付列が見つからなかった場合、数値列（0〜1の少数または日付らしい列）をスキャン
+  if (dateCols.length === 0) {
+    const sampleRow = aoa[headerRow + 1] ?? [];
+    for (let c = 0; c < sampleRow.length; c++) {
+      if (c === numberCol || c === prevRankCol || c === currRankCol) continue;
+      const val = Number(sampleRow[c]);
+      if (!isNaN(val) && val >= 0 && val <= 1) {
+        const headerVal = cellStr((aoa[headerRow] ?? [])[c]);
+        dateCols.push({ colIndex: c, label: headerVal || `Day ${dateCols.length + 1}` });
+      }
+    }
+  }
+
+  const rows: ParsedSelectionArcherRow[] = [];
+
+  for (let r = headerRow + 1; r < aoa.length; r++) {
+    const row = aoa[r] ?? [];
+    const numberRaw = cellStr(row[numberCol]);
+    if (!numberRaw) continue;
+    const memberNumber = Number(numberRaw.replace(/[^\d]/g, ""));
+    if (!memberNumber || isNaN(memberNumber)) continue;
+
+    const previousRank = prevRankCol >= 0 ? cellStr(row[prevRankCol]) : undefined;
+    const currentRank = currRankCol >= 0 ? cellStr(row[currRankCol]) : undefined;
+
+    const rounds: ParsedSelectionRound[] = [];
+    for (const dc of dateCols) {
+      const cellVal = cellStr(row[dc.colIndex]);
+      if (cellVal === "" || cellVal === "-") continue;
+      const ratio = Number(cellVal);
+      if (isNaN(ratio)) continue;
+
+      // 4射中の的中数に換算 (例: 0.25 -> 1中, 0.5 -> 2中)
+      const hits = Math.round(ratio * 4);
+      const shots: (ShotResult | null)[] = [1, 2, 3, 4].map((i) =>
+        i <= hits ? "HIT" : "MISS"
+      );
+
+      rounds.push({
+        dateKey: dc.label,
+        shots,
+      });
+    }
+
+    if (rounds.length > 0) {
+      rows.push({
+        memberNumber,
+        previousRank: previousRank || undefined,
+        currentRank: currentRank || undefined,
+        rounds,
+      });
+    }
+  }
+
+  return {
+    titleHint: titleHint || "校内選考データ",
+    rows,
+    dateColumns: dateCols,
+    warnings,
+  };
 }
 
 const PRIVACY_HEADERS = /^(氏名|名前|name)$/i;
@@ -336,11 +469,10 @@ export function parseTournamentResultSheet(
     if (a === "1" && b === "2" && c2 === "3" && d === "4") {
       shotGroups.push([c, c + 1, c + 2, c + 3]);
       c += 3;
-      if (shotGroups.length >= 2) break;
     }
   }
 
-  if (shotGroups.length >= 2) {
+  if (shotGroups.length > 0) {
     shotDetectMethod = "subheader_1_2_3_4";
   } else {
     const base = genderCol + 1;
@@ -354,8 +486,7 @@ export function parseTournamentResultSheet(
     );
   }
 
-  const round1Cols = shotGroups[0];
-  const round2Cols = shotGroups[1];
+  const roundCols = shotGroups;
 
   const rows: ParsedArcherRow[] = [];
   let lastTachi = "";
@@ -424,15 +555,13 @@ export function parseTournamentResultSheet(
 
     const numberRaw = cellStr(row[numberCol]);
     const genderRaw = cellStr(row[genderCol]);
-    const round1Raw = round1Cols.map((ci) => cellStr(row[ci]));
-    const round2Raw = round2Cols.map((ci) => cellStr(row[ci]));
+    const roundRaws = roundCols.map((cols) => cols.map((ci) => cellStr(row[ci])));
 
     const pushSample = (skipReason: string | null, tachiForSample?: string) => {
       if (sampleDataRows.length >= 8) return;
       if (
         !numberRaw &&
-        !round1Raw.some(Boolean) &&
-        !round2Raw.some(Boolean) &&
+        !roundRaws.some((rr) => rr.some(Boolean)) &&
         sampleDataRows.length >= 3
       ) {
         return;
@@ -442,8 +571,7 @@ export function parseTournamentResultSheet(
         tachi: tachiForSample || lastTachi || effectiveTachiRaw || "(empty)",
         numberRaw: numberRaw || "(empty)",
         genderRaw: genderRaw || "(empty)",
-        round1Raw,
-        round2Raw,
+        roundRaws,
         skipReason,
       });
     };
@@ -460,10 +588,9 @@ export function parseTournamentResultSheet(
       continue;
     }
 
-    const round1 = round1Cols.map((ci) => parseShotCell(row[ci]));
-    const round2 = round2Cols.map((ci) => parseShotCell(row[ci]));
+    const rounds = roundCols.map((cols) => cols.map((ci) => parseShotCell(row[ci])));
 
-    if (!hasShots(round1) && !hasShots(round2)) {
+    if (!rounds.some((rnd) => hasShots(rnd))) {
       skipCounts.noShots++;
       pushSample("noShots");
       continue;
@@ -529,8 +656,7 @@ export function parseTournamentResultSheet(
       positionInTachi: pos,
       memberNumber,
       gender,
-      round1,
-      round2,
+      rounds,
     });
 
     if (activeAuto && autoCountInGroup >= AUTO_GROUP_SIZE) {
@@ -565,8 +691,7 @@ export function parseTournamentResultSheet(
     headerRowPreview,
     subHeaderPreview,
     shotDetectMethod,
-    round1Cols,
-    round2Cols,
+    roundCols,
     scannedRows,
     acceptedRows: rows.length,
     skipCounts,
@@ -596,7 +721,7 @@ export function formatParseDiagnostics(d: ParseDiagnostics): string {
     `\u5217: \u7acb\u9806=${d.tachiCol != null ? colLabel(d.tachiCol) : "-"} / \u756a\u53f7=${d.numberCol != null ? colLabel(d.numberCol) : "-"} / \u6027\u5225=${d.genderCol != null ? colLabel(d.genderCol) : "-"} / \u6c0f\u540d(\u7121\u8996)=${d.nameColIgnored != null ? colLabel(d.nameColIgnored) : "-"}`
   );
   lines.push(
-    `\u5c04\u5217\u691c\u51fa: ${d.shotDetectMethod} / 1\u56de\u76ee=[${d.round1Cols.map(colLabel).join(",")}] / 2\u56de\u76ee=[${d.round2Cols.map(colLabel).join(",")}]`
+    `射列検出: ${d.shotDetectMethod} / 総ラウンド数=${d.roundCols.length}`
   );
   lines.push(
     `\u30b9\u30ad\u30e3\u30f3: ${d.scannedRows}\u884c / \u63a1\u7528: ${d.acceptedRows}\u884c`

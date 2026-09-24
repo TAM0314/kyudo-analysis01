@@ -120,6 +120,7 @@ export default function InputPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [previewInfo, setPreviewInfo] = useState<any | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [importMode, setImportMode] = useState<"tournament" | "selection">("tournament");
   const importFileRef = useRef<HTMLInputElement>(null);
 
   const fetchTournaments = useCallback(async () => {
@@ -296,6 +297,7 @@ export default function InputPage() {
     formData.append("file", fileObj);
     formData.append("sheetName", sheetNameStr);
     formData.append("previewOnly", "true");
+    formData.append("importMode", importMode);
     try {
       const res = await fetch("/api/tournaments/import", {
         method: "POST",
@@ -323,6 +325,7 @@ export default function InputPage() {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("listOnly", "true");
+    formData.append("importMode", importMode);
 
     try {
       const res = await fetch("/api/tournaments/import", {
@@ -374,7 +377,6 @@ export default function InputPage() {
 
   async function runTournamentImport() {
     if (!importFile || !selectedSheet) return;
-    // Contextのrunimportに委譲（ページ移動しても処理が継続される）
     clearImportForm();
     await runImport({
       file: importFile,
@@ -382,6 +384,7 @@ export default function InputPage() {
       name: importName,
       date: importDate,
       type: importType,
+      importMode,
     });
   }
 
@@ -459,17 +462,52 @@ export default function InputPage() {
         </CardHeader>
         {showImport && (
           <CardContent className="space-y-4">
+            {/* インポート形式切り替えタブ */}
+            <div className="grid grid-cols-2 gap-2 p-1 bg-stone-100 rounded-lg">
+              <button
+                type="button"
+                onClick={() => {
+                  setImportMode("tournament");
+                  clearImportForm();
+                  setImportType("PUBLIC");
+                }}
+                className={`py-2 px-3 text-xs sm:text-sm font-medium rounded-md transition-colors ${
+                  importMode === "tournament"
+                    ? "bg-white text-stone-900 shadow-sm"
+                    : "text-stone-600 hover:text-stone-900"
+                }`}
+              >
+                🏆 通常の大会結果 (公式戦等)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setImportMode("selection");
+                  clearImportForm();
+                  setImportType("SELECTION");
+                }}
+                className={`py-2 px-3 text-xs sm:text-sm font-medium rounded-md transition-colors ${
+                  importMode === "selection"
+                    ? "bg-white text-stone-900 shadow-sm"
+                    : "text-stone-600 hover:text-stone-900"
+                }`}
+              >
+                📋 校内選考 (日別的中率・RANK)
+              </button>
+            </div>
+
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <p className="text-sm text-stone-500">
-                立順・番号・性別・1回目/2回目の○×を読み込みます。氏名は読みません。
-                立順は「女D」「男A」などを優先し、結合セルも読み取ります。
+                {importMode === "tournament"
+                  ? "立順・番号・性別・1回目/2回目の○×を読み込みます。立順は「女D」「男A」などを優先します。"
+                  : "前回ランク・的中ランク・部員番号(no)および日別の的中率一覧（916, 917…）を読み込み、日別成績として取り込みます。"}
               </p>
               <a
-                href="/api/tournaments/import"
-                download="kyudo_tournament_template.xlsx"
+                href={importMode === "tournament" ? "/api/tournaments/import" : "/api/tournaments/import?mode=selection"}
+                download={importMode === "tournament" ? "kyudo_tournament_template.xlsx" : "kyudo_selection_template.xlsx"}
                 className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1 shrink-0 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-md font-medium"
               >
-                📥 大会結果Excelテンプレート
+                📥 {importMode === "tournament" ? "大会結果テンプレート" : "校内選考テンプレート"}
               </a>
             </div>
 

@@ -26,6 +26,7 @@ interface ImportContextValue {
     name: string;
     date: string;
     type: TournamentType;
+    importMode?: string;
   }) => Promise<ImportResult>;
   clearResult: () => void;
 }
@@ -43,6 +44,7 @@ export function ImportProvider({ children }: { children: ReactNode }) {
       name: string;
       date: string;
       type: TournamentType;
+      importMode?: string;
     }): Promise<ImportResult> => {
       setImporting(true);
       setResult(null);
@@ -53,6 +55,9 @@ export function ImportProvider({ children }: { children: ReactNode }) {
       formData.append("name", params.name);
       formData.append("date", params.date);
       formData.append("type", params.type);
+      if (params.importMode) {
+        formData.append("importMode", params.importMode);
+      }
 
       try {
         const res = await fetch("/api/tournaments/import", {

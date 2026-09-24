@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import { TournamentType } from "@/generated/prisma/client";
 import {
   parseTournamentResultSheet,
+  parseSelectionExcelSheet,
   formatParseDiagnostics,
   uniqueTachiLabelsInOrder,
   splitRoundDisplayLabel,
@@ -48,7 +49,31 @@ function sheetToAoa(wb: XLSX.WorkBook, sheetName: string): unknown[][] {
   });
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const mode = searchParams.get("mode");
+
+  if (mode === "selection") {
+    const aoa = [
+      ["校内選考サンプル", "", "", "", "", "", "", ""],
+      ["前回ランク", "的中ランク", "的中率", "順位", "回数", "no", "916", "917"],
+      ["D", "B", "35.0%", "7", "3", "4316", "0.25", "0.5"],
+      ["B", "B", "35.0%", "2", "5", "4314", "0.0", "0.75"],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "校内選考");
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    return new NextResponse(buf, {
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition":
+          'attachment; filename="kyudo_selection_template.xlsx"',
+      },
+    });
+  }
+
   const aoa = [
     ["大会結果サンプル", "", "", "", "", "", "", "", "", "", "", "", ""],
     ["立順", "番号", "性別", "1回目", "", "", "", "2回目", "", "", "", "", ""],
@@ -77,6 +102,7 @@ export async function POST(req: NextRequest) {
   const listOnly = formData.get("listOnly") === "true";
   const previewOnly = formData.get("previewOnly") === "true";
   const relabelOnly = formData.get("relabelOnly") === "true";
+  const importMode = (formData.get("importMode") as string) || "auto"; // "tournament" | "selection" | "auto"
   const sheetNameRaw = formData.get("sheetName");
   const requestedSheet =
     typeof sheetNameRaw === "string" && sheetNameRaw.trim()
@@ -124,6 +150,153 @@ export async function POST(req: NextRequest) {
 
   const sheetName = requestedSheet ?? wb.SheetNames[0];
   const aoa = sheetToAoa(wb, sheetName);
+
+  let isSelection = false;
+  let selectionParsed = null;
+
+  if (importMode === "selection") {
+    isSelection = true;
+    selectionParsed = parseSelectionExcelSheet(aoa);
+  } else if (importMode === "tournament") {
+    isSelection = false;
+  } else {
+    selectionParsed = parseSelectionExcelSheet(aoa);
+    if (selectionParsed.rows.length > 0) {
+      isSelection = true;
+    }
+  }
+
+  if (isSelection) {
+    if (!selectionParsed) selectionParsed = parseSelectionExcelSheet(aoa);
+    if (previewOnly) {
+      return NextResponse.json({
+        ok: true,
+        preview: true,
+        isSelection: true,
+        sheetName,
+        titleHint: selectionParsed.titleHint,
+        rowsCount: selectionParsed.rows.length,
+        dateLabels: selectionParsed.dateColumns.map((d) => d.label),
+        warnings: selectionParsed.warnings,
+        sampleRows: selectionParsed.rows.slice(0, 10),
+      });
+    }
+
+    const name =
+      (typeof formData.get("name") === "string" &&
+        (formData.get("name") as string).trim()) ||
+      selectionParsed.titleHint ||
+      "校内選考";
+    const dateStr =
+      (typeof formData.get("date") === "string" &&
+        (formData.get("date") as string).trim()) ||
+      new Date().toISOString().slice(0, 10);
+    const type = "SELECTION" as TournamentType;
+
+    try {
+      const tournament = await prisma.tournament.create({
+        data: { name, type, date: new Date(dateStr) },
+      });
+
+      let membersCreated = 0;
+      let roundsCreated = 0;
+      let entriesCreated = 0;
+      let shotsCreated = 0;
+
+      const memberIdByNumber = new Map<number, number>();
+      const uniqueMembers = new Map<number, { number: number }>();
+      for (const row of selectionParsed.rows) {
+        uniqueMembers.set(row.memberNumber, { number: row.memberNumber });
+      }
+
+      for (const m of uniqueMembers.values()) {
+        const existing = await prisma.member.findUnique({
+          where: { number: m.number },
+        });
+        if (existing) {
+          memberIdByNumber.set(m.number, existing.id);
+        } else {
+          const created = await prisma.member.create({
+            data: { number: m.number, gender: "MALE", grade: null },
+          });
+          memberIdByNumber.set(m.number, created.id);
+          membersCreated++;
+        }
+      }
+
+      for (const [roundIdx, dc] of selectionParsed.dateColumns.entries()) {
+        const roundNumber = roundIdx + 1;
+        const roundLabel = dc.label;
+
+        const round = await prisma.round.create({
+          data: {
+            tournamentId: tournament.id,
+            roundNumber,
+            label: roundLabel,
+          },
+        });
+        roundsCreated++;
+
+        for (const row of selectionParsed.rows) {
+          const selRound = row.rounds.find((sr) => sr.dateKey === dc.label);
+          if (!selRound || selRound.shots.length === 0) continue;
+
+          const memberId = memberIdByNumber.get(row.memberNumber);
+          if (!memberId) continue;
+
+          const positionInRound =
+            (await prisma.entry.count({ where: { roundId: round.id } })) + 1;
+
+          const entry = await prisma.entry.create({
+            data: {
+              roundId: round.id,
+              memberId,
+              positionInRound,
+            },
+          });
+          entriesCreated++;
+
+          for (let i = 0; i < selRound.shots.length; i++) {
+            const result = selRound.shots[i];
+            if (!result) continue;
+            await prisma.shot.create({
+              data: {
+                entryId: entry.id,
+                arrowNumber: i + 1,
+                result,
+              },
+            });
+            shotsCreated++;
+          }
+        }
+      }
+
+      return NextResponse.json({
+        ok: true,
+        tournament: {
+          id: tournament.id,
+          name: tournament.name,
+          type: tournament.type,
+          date: tournament.date,
+        },
+        sheetName,
+        titleHint: selectionParsed.titleHint,
+        isSelection: true,
+        warnings: selectionParsed.warnings,
+        created: {
+          members: membersCreated,
+          rounds: roundsCreated,
+          entries: entriesCreated,
+          shots: shotsCreated,
+        },
+        message: `校内選考大会「${tournament.name}」を取り込みました（日程=${roundsCreated}日分・記録=${entriesCreated}件）`,
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
+
   const parsed = parseTournamentResultSheet(aoa);
 
   if (previewOnly) {
@@ -345,21 +518,24 @@ export async function POST(req: NextRequest) {
     for (const tachi of tachiOrder) {
       const group = byTachi.get(tachi)!;
 
-      for (const kai of [1, 2] as const) {
+      const maxRounds = Math.max(
+        ...group.map((row) => row.rounds.length),
+        2
+      );
+
+      for (let roundIdx = 0; roundIdx < maxRounds; roundIdx++) {
+        const kai = roundIdx + 1;
         const shooters = group
           .map((row) => ({
             row,
-            shots: kai === 1 ? row.round1 : row.round2,
+            shots: row.rounds[roundIdx] ?? [],
           }))
           .filter(({ shots }) => shots.some((s) => s !== null));
 
         if (shooters.length === 0) continue;
 
         roundNumber += 1;
-        const roundLabel =
-          kai === 1
-            ? `${tachi}\uff081\u56de\u76ee\uff09`
-            : `${tachi}\uff082\u56de\u76ee\uff09`;
+        const roundLabel = `${tachi}（${kai}回目）`;
 
         const round = await prisma.round.create({
           data: {
