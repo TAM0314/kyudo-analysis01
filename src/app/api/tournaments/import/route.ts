@@ -8,6 +8,8 @@ import {
   formatParseDiagnostics,
   uniqueTachiLabelsInOrder,
   splitRoundDisplayLabel,
+  type ParsedArcherRow,
+  type ParsedShot,
 } from "@/lib/tournament-excel";
 import { isDemoMode, demoResponse } from "@/lib/demo";
 
@@ -519,18 +521,21 @@ export async function POST(req: NextRequest) {
       const group = byTachi.get(tachi)!;
 
       const maxRounds = Math.max(
-        ...group.map((row) => row.rounds.length),
+        ...group.map((row: ParsedArcherRow) => row.rounds.length),
         2
       );
 
       for (let roundIdx = 0; roundIdx < maxRounds; roundIdx++) {
         const kai = roundIdx + 1;
         const shooters = group
-          .map((row) => ({
+          .map((row: ParsedArcherRow) => ({
             row,
             shots: row.rounds[roundIdx] ?? [],
           }))
-          .filter(({ shots }) => shots.some((s) => s !== null));
+          .filter(
+            ({ shots }: { shots: (ParsedShot | null)[] }) =>
+              shots.some((s: ParsedShot | null) => s !== null)
+          );
 
         if (shooters.length === 0) continue;
 
@@ -546,7 +551,10 @@ export async function POST(req: NextRequest) {
         });
         roundsCreated++;
 
-        for (const { row, shots } of shooters) {
+        for (const { row, shots } of shooters as Array<{
+          row: ParsedArcherRow;
+          shots: (ParsedShot | null)[];
+        }>) {
           const memberId = memberIdByNumber.get(row.memberNumber);
           if (!memberId) continue;
 

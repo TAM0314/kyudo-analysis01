@@ -314,8 +314,7 @@ function emptyDiagnostics(
     headerRowPreview: [],
     subHeaderPreview: [],
     shotDetectMethod: "none",
-    round1Cols: [],
-    round2Cols: [],
+    roundCols: [],
     scannedRows: 0,
     acceptedRows: 0,
     skipCounts: {
@@ -339,7 +338,7 @@ function inferLikelyCause(d: ParseDiagnostics): string {
     return "\u898b\u51fa\u3057\u884c\u306b\u300c\u756a\u53f7\u300d\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3002\u9078\u3093\u3060\u30b7\u30fc\u30c8\u304c\u9055\u3046\u304b\u3001\u5217\u540d\u304c\u300c\u756a\u53f7\u300d\u4ee5\u5916\uff08\u4f8b: No.\u30fb\u90e8\u54e1\u756a\u53f7\uff09\u306e\u53ef\u80fd\u6027\u304c\u3042\u308a\u307e\u3059\u3002";
   }
   if (d.skipCounts.noShots > 0 && d.acceptedRows === 0) {
-    return `\u756a\u53f7\u306f\u8aad\u3081\u307e\u3057\u305f\u304c\u3001\u5c04\u5217\uff08\u4e88\u60f3: ${d.round1Cols.map(colLabel).join(",")}\u3068${d.round2Cols.map(colLabel).join(",")}\uff09\u306b\u25cb\u00d7\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3002\u5217\u4f4d\u7f6e\u305a\u308c\u3001\u307e\u305f\u306f\u25cb\u00d7\u304c\u56f3\u5f62\u30fb\u753b\u50cf\u306e\u53ef\u80fd\u6027\u304c\u9ad8\u3044\u3067\u3059\u3002`;
+    return `\u756a\u53f7\u306f\u8aad\u3081\u307e\u305f\u304c\u3001\u5c04\u5217\u30b0\u30eb\u30fc\u30d7\u306b\u25cb\u00d7\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3002`;
   }
   if (d.skipCounts.noTachi > 0 && d.acceptedRows === 0) {
     return "\u7acb\u9806\u5217\u304c\u7a7a\u306e\u305f\u3081\u5168\u884c\u30b9\u30ad\u30c3\u30d7\u3055\u308c\u307e\u3057\u305f\u3002\u7d50\u5408\u30bb\u30eb\u306e\u8aad\u307f\u53d6\u308a\u5931\u6557\u306e\u53ef\u80fd\u6027\u304c\u3042\u308a\u307e\u3059\u3002";
@@ -749,7 +748,7 @@ export function formatParseDiagnostics(d: ParseDiagnostics): string {
     lines.push("[\u30b5\u30f3\u30d7\u30eb\u884c]");
     for (const s of d.sampleDataRows) {
       lines.push(
-        `R${s.excelRow} tachi=${s.tachi} no=${s.numberRaw} sex=${s.genderRaw} r1=[${s.round1Raw.join(",")}] r2=[${s.round2Raw.join(",")}]${s.skipReason ? ` SKIP:${s.skipReason}` : " OK"}`
+        `R${s.excelRow} tachi=${s.tachi} no=${s.numberRaw} sex=${s.genderRaw} rounds=${s.roundRaws.length}${s.skipReason ? ` SKIP:${s.skipReason}` : " OK"}`
       );
     }
   }
