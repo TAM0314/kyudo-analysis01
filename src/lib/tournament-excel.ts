@@ -358,6 +358,13 @@ function inferLikelyCause(d: ParseDiagnostics): string {
   return "";
 }
 
+export interface ParseTournamentExcelResult {
+  titleHint: string | null;
+  rows: ParsedArcherRow[];
+  warnings: string[];
+  diagnostics: ParseDiagnostics;
+}
+
 /**
  * Parse kyudo match-result Excel (立順 / 番号 / 性別 / 1回目4射 / 2回目4射).
  * Ignores 氏名 and 決勝射詰め section.
