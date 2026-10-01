@@ -222,7 +222,9 @@ export async function POST(req: NextRequest) {
             data: { number: m.number, gender: "MALE", grade: null },
           });
           memberIdByNumber.set(m.number, created.id);
-          membersCreated++;
+          if (m.number !== 9999) {
+            membersCreated++;
+          }
         }
       }
 
@@ -291,7 +293,7 @@ export async function POST(req: NextRequest) {
           entries: entriesCreated,
           shots: shotsCreated,
         },
-        message: `校内選考大会「${tournament.name}」を取り込みました（日程=${roundsCreated}日分・記録=${entriesCreated}件）`,
+        message: `校内選考大会「${tournament.name}」を取り込みました（日程=${roundsCreated}日分・記録=${entriesCreated}件${membersCreated > 0 ? `・新規部員=${membersCreated}名` : ""}）`,
       });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -501,7 +503,9 @@ export async function POST(req: NextRequest) {
           data: { number: m.number, gender: m.gender, grade: null },
         });
         memberIdByNumber.set(m.number, created.id);
-        membersCreated++;
+        if (m.number !== 9999) {
+          membersCreated++;
+        }
       }
     }
 
@@ -601,7 +605,7 @@ export async function POST(req: NextRequest) {
         entries: entriesCreated,
         shots: shotsCreated,
       },
-      message: `\u5927\u4f1a\u300c${tournament.name}\u300d\u3092\u53d6\u308a\u8fbc\u307f\u307e\u3057\u305f\uff08\u7acb\u3061${roundsCreated}\u30fb\u8a18\u9332${entriesCreated}\u30fb\u65b0\u898f\u90e8\u54e1${membersCreated}\uff09`,
+      message: `大会「${tournament.name}」を取り込みました（立ち${roundsCreated}・記録${entriesCreated}${membersCreated > 0 ? `・新規部員${membersCreated}` : ""}）`,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
