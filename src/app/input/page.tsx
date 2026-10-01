@@ -305,9 +305,6 @@ export default function InputPage() {
       });
       const data = await res.json();
       setPreviewInfo(data);
-      if (data.ok && data.titleHint && !importName) {
-        setImportName(data.titleHint);
-      }
     } catch {
       setPreviewInfo({ error: "プレビューの取得に失敗しました" });
     }
@@ -320,6 +317,7 @@ export default function InputPage() {
     setSheetNames([]);
     setSelectedSheet("");
     setPreviewInfo(null);
+    setImportName(file.name.replace(/\.[^/.]+$/, ""));
     setListingSheets(true);
 
     const formData = new FormData();
