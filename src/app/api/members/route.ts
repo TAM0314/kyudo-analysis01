@@ -10,6 +10,7 @@ import { isDemoMode, demoResponse } from "@/lib/demo";
 
 export async function GET() {
   const members = await prisma.member.findMany({
+    where: { number: { not: 9999 } },
     orderBy: { number: "asc" },
   });
   return NextResponse.json(members);

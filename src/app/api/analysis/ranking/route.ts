@@ -59,6 +59,7 @@ export async function GET(req: NextRequest) {
 
   for (const entry of entries) {
     const num = entry.member.number;
+    if (num === 9999) continue;
     if (!statsMap.has(num)) {
       statsMap.set(num, {
         memberNumber: num,

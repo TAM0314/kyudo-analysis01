@@ -5,7 +5,7 @@ import { isDemoMode, demoResponse } from "@/lib/demo";
 export async function GET() {
   const [memberCount, tournamentCount, roundCount, entryCount, shotCount] =
     await Promise.all([
-      prisma.member.count(),
+      prisma.member.count({ where: { number: { not: 9999 } } }),
       prisma.tournament.count(),
       prisma.round.count(),
       prisma.entry.count(),
@@ -24,6 +24,7 @@ export async function GET() {
   });
 
   const members = await prisma.member.findMany({
+    where: { number: { not: 9999 } },
     orderBy: { number: "asc" },
     select: {
       id: true,

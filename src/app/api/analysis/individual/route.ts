@@ -16,6 +16,11 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  const member = await prisma.member.findUnique({ where: { id: memberId } });
+  if (!member || member.number === 9999) {
+    return NextResponse.json({ error: "無効な部員です" }, { status: 400 });
+  }
+
   const limit = limitRaw ? (parsePositiveInt(limitRaw) ?? 10) : 10;
 
   const entries = await prisma.entry.findMany({
