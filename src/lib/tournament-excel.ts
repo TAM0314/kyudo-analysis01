@@ -88,6 +88,7 @@ export function parseSelectionExcelSheet(
   let numberCol = -1;
   let prevRankCol = -1;
   let currRankCol = -1;
+  let hitRateCol = -1;
   const dateCols: { colIndex: number; label: string }[] = [];
 
   for (let r = 0; r < Math.min(15, aoa.length); r++) {
@@ -100,8 +101,10 @@ export function parseSelectionExcelSheet(
       }
       if (v === "前回ランク") prevRankCol = c;
       if (v === "的中ランク") currRankCol = c;
+      if (v === "的中率" || v === "的中率(%)" || v === "的中率（％）") hitRateCol = c;
     }
     if (headerRow >= 0) {
+      if (hitRateCol < 0) hitRateCol = 2; // Column C fallback
       // ヘッダー行またはその周辺で日付列（例: 916, 917 や 9/16 など）を検知
       const headerRowCells = aoa[headerRow] ?? [];
       const topRowCells = r > 0 ? aoa[r - 1] ?? [] : [];
@@ -151,6 +154,15 @@ export function parseSelectionExcelSheet(
 
     const previousRank = prevRankCol >= 0 ? cellStr(row[prevRankCol]) : undefined;
     const currentRank = currRankCol >= 0 ? cellStr(row[currRankCol]) : undefined;
+    const hitRateRaw = hitRateCol >= 0 ? cellStr(row[hitRateCol]) : "";
+    let overallHitRate: number | undefined = undefined;
+    if (hitRateRaw) {
+      const cleaned = hitRateRaw.replace(/[%％]/g, "").trim();
+      const num = Number(cleaned);
+      if (!isNaN(num)) {
+        overallHitRate = num <= 1 && num > 0 ? num : num / 100;
+      }
+    }
 
     const rounds: ParsedSelectionRound[] = [];
     for (const dc of dateCols) {
@@ -172,10 +184,47 @@ export function parseSelectionExcelSheet(
     }
 
     if (rounds.length > 0) {
+      const totalShots = rounds.reduce((sum, rd) => sum + rd.shots.length, 0);
+      if (overallHitRate !== undefined && totalShots > 0) {
+        const targetHits = Math.max(0, Math.min(totalShots, Math.round(totalShots * overallHitRate)));
+        let currentHitsSum = rounds.reduce((sum, rd) => sum + rd.shots.filter(s => s === "HIT").length, 0);
+
+        if (currentHitsSum !== targetHits) {
+          let diff = targetHits - currentHitsSum;
+          const roundHitsList = rounds.map(rd => rd.shots.filter(s => s === "HIT").length);
+
+          while (diff !== 0) {
+            let adjusted = false;
+            for (let i = 0; i < rounds.length && diff !== 0; i++) {
+              const rLen = rounds[i].shots.length;
+              const curHits = roundHitsList[i];
+              if (diff > 0 && curHits < rLen) {
+                roundHitsList[i]++;
+                diff--;
+                adjusted = true;
+              } else if (diff < 0 && curHits > 0) {
+                roundHitsList[i]--;
+                diff++;
+                adjusted = true;
+              }
+            }
+            if (!adjusted) break;
+          }
+
+          for (let i = 0; i < rounds.length; i++) {
+            const hits = roundHitsList[i];
+            rounds[i].shots = [1, 2, 3, 4].slice(0, rounds[i].shots.length).map((_, idx) =>
+              idx < hits ? "HIT" : "MISS"
+            );
+          }
+        }
+      }
+
       rows.push({
         memberNumber,
         previousRank: previousRank || undefined,
         currentRank: currentRank || undefined,
+        overallHitRate,
         rounds,
       });
     }
