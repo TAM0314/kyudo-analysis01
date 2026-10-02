@@ -165,14 +165,19 @@ export function parseSelectionExcelSheet(
     }
 
     const rounds: ParsedSelectionRound[] = [];
+    const attendedFlags: boolean[] = [];
     for (const dc of dateCols) {
       const cellVal = cellStr(row[dc.colIndex]);
-      if (cellVal === "" || cellVal === "-") continue;
-      const ratio = Number(cellVal);
-      if (isNaN(ratio)) continue;
+      const isAbsent = cellVal === "" || cellVal === "-";
+      attendedFlags.push(!isAbsent);
 
-      // 4射中の的中数に換算 (例: 0.25 -> 1中, 0.5 -> 2中)
-      const hits = Math.round(ratio * 4);
+      let hits = 0;
+      if (!isAbsent) {
+        const ratio = Number(cellVal);
+        if (!isNaN(ratio)) {
+          hits = Math.max(0, Math.min(4, Math.round(ratio * 4)));
+        }
+      }
       const shots: (ShotResult | null)[] = [1, 2, 3, 4].map((i) =>
         i <= hits ? "HIT" : "MISS"
       );
@@ -195,7 +200,9 @@ export function parseSelectionExcelSheet(
 
           while (diff !== 0) {
             let adjusted = false;
+            // 1. 出席しているラウンドを優先して調整
             for (let i = 0; i < rounds.length && diff !== 0; i++) {
+              if (!attendedFlags[i]) continue;
               const rLen = rounds[i].shots.length;
               const curHits = roundHitsList[i];
               if (diff > 0 && curHits < rLen) {
@@ -206,6 +213,22 @@ export function parseSelectionExcelSheet(
                 roundHitsList[i]--;
                 diff++;
                 adjusted = true;
+              }
+            }
+            // 2. 出席ラウンドだけで調整しきれない場合は欠席ラウンドも含める
+            if (!adjusted && diff !== 0) {
+              for (let i = 0; i < rounds.length && diff !== 0; i++) {
+                const rLen = rounds[i].shots.length;
+                const curHits = roundHitsList[i];
+                if (diff > 0 && curHits < rLen) {
+                  roundHitsList[i]++;
+                  diff--;
+                  adjusted = true;
+                } else if (diff < 0 && curHits > 0) {
+                  roundHitsList[i]--;
+                  diff++;
+                  adjusted = true;
+                }
               }
             }
             if (!adjusted) break;
