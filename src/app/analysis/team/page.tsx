@@ -371,7 +371,7 @@ function parseRoundLabel(label: string): {
   shortLabel: string;
   attempt: number | null;
 } {
-  const m = label.match(/^(.+?)[（(]\s*([1-9]\d*)\s*回目\s*[）)]$*/);
+  const m = label.match(/^(.+?)[（(]\s*([1-9]\d*)\s*回目\s*[）)]$?/);
   if (m) {
     return {
       shortLabel: m[1].trim(),
