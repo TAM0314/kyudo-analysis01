@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -369,13 +369,13 @@ const GENDER_SECTION_TITLE: Record<GenderKey, string> = {
 
 function parseRoundLabel(label: string): {
   shortLabel: string;
-  attempt: 1 | 2 | null;
+  attempt: number | null;
 } {
-  const m = label.match(/^(.+?)[（(]\s*([12])\s*回目\s*[）)]$/);
+  const m = label.match(/^(.+?)[（(]\s*([1-9]\d*)\s*回目\s*[）)]$*/);
   if (m) {
     return {
       shortLabel: m[1].trim(),
-      attempt: Number(m[2]) as 1 | 2,
+      attempt: Number(m[2]),
     };
   }
   return { shortLabel: label, attempt: null };
@@ -403,56 +403,62 @@ function inferGenderFromMembers(
   return "FEMALE";
 }
 
-function placeholderRound(tachi: string, attempt: 1 | 2): RoundChartRow {
-  return {
-    roundId: -attempt,
-    roundNumber: 0,
-    label: `${tachi}（${attempt}回目）`,
-    shortLabel: tachi,
-    hits: 0,
-    total: 0,
-    hitRate: 0,
-    memberResults: [],
-  };
-}
-
 function splitRoundsByAttempt(rounds: RoundStat[]): {
-  first: RoundChartRow[];
-  second: RoundChartRow[];
-  other: RoundChartRow[];
+  attemptRowsByTachi: Array<{
+    shortLabel: string;
+    attempts: RoundChartRow[];
+  }>;
+  maxAttempts: number;
   tachiOrder: string[];
 } {
-  const firstMap = new Map<string, RoundChartRow>();
-  const secondMap = new Map<string, RoundChartRow>();
-  const other: RoundChartRow[] = [];
+  const tachiMap = new Map<string, Map<number, RoundChartRow>>();
   const tachiOrder: string[] = [];
+  const tachiAttemptCounters = new Map<string, number>();
 
   for (const r of rounds) {
-    const { shortLabel, attempt } = parseRoundLabel(r.label);
-    const row = { ...r, shortLabel };
-    if (attempt === 1) {
-      if (!firstMap.has(shortLabel) && !secondMap.has(shortLabel)) {
-        tachiOrder.push(shortLabel);
-      }
-      firstMap.set(shortLabel, row);
-    } else if (attempt === 2) {
-      if (!firstMap.has(shortLabel) && !secondMap.has(shortLabel)) {
-        tachiOrder.push(shortLabel);
-      }
-      secondMap.set(shortLabel, row);
-    } else {
-      other.push(row);
+    const { shortLabel, attempt: parsedAttempt } = parseRoundLabel(r.label);
+    if (!tachiMap.has(shortLabel)) {
+      tachiOrder.push(shortLabel);
+      tachiMap.set(shortLabel, new Map());
+      tachiAttemptCounters.set(shortLabel, 0);
+    }
+    const attemptMap = tachiMap.get(shortLabel)!;
+    const currentCount = tachiAttemptCounters.get(shortLabel)!;
+    const attempt = parsedAttempt ?? (currentCount + 1);
+    tachiAttemptCounters.set(shortLabel, Math.max(currentCount, attempt));
+
+    attemptMap.set(attempt, { ...r, shortLabel });
+  }
+
+  let maxAttempts = 1;
+  for (const attemptMap of tachiMap.values()) {
+    for (const att of attemptMap.keys()) {
+      if (att > maxAttempts) maxAttempts = att;
     }
   }
+  maxAttempts = Math.max(2, maxAttempts);
 
-  const first: RoundChartRow[] = [];
-  const second: RoundChartRow[] = [];
-  for (const tachi of tachiOrder) {
-    first.push(firstMap.get(tachi) ?? placeholderRound(tachi, 1));
-    second.push(secondMap.get(tachi) ?? placeholderRound(tachi, 2));
-  }
+  const attemptRowsByTachi = tachiOrder.map((shortLabel) => {
+    const attemptMap = tachiMap.get(shortLabel)!;
+    const attempts: RoundChartRow[] = [];
+    for (let a = 1; a <= maxAttempts; a++) {
+      attempts.push(
+        attemptMap.get(a) ?? {
+          roundId: -a,
+          roundNumber: 0,
+          label: `${shortLabel}（${a}回目）`,
+          shortLabel,
+          hits: 0,
+          total: 0,
+          hitRate: 0,
+          memberResults: [],
+        }
+      );
+    }
+    return { shortLabel, attempts };
+  });
 
-  return { first, second, other, tachiOrder };
+  return { attemptRowsByTachi, maxAttempts, tachiOrder };
 }
 
 type TrendKind = "up" | "down" | "flat" | "na";
@@ -559,15 +565,22 @@ function HitRateBar({
 function GenderRoundSection({
   gender,
   rows,
+  maxAttempts,
 }: {
   gender: GenderKey;
   rows: Array<{
     shortLabel: string;
-    first: RoundChartRow;
-    second: RoundChartRow;
+    attempts: RoundChartRow[];
   }>;
+  maxAttempts: number;
 }) {
   const color = GENDER_BAR_COLOR[gender];
+  const colTemplate =
+    `5rem ` +
+    Array.from(
+      { length: maxAttempts },
+      (_, i) => `${i > 0 ? "2.75rem " : ""}1fr`
+    ).join(" ");
 
   return (
     <div className="space-y-3">
@@ -583,40 +596,54 @@ function GenderRoundSection({
         <span className="text-xs text-stone-400">（{rows.length}立）</span>
       </div>
 
-      <div className="grid grid-cols-[3rem_1fr_2rem_1fr] sm:grid-cols-[4.5rem_1fr_2.75rem_1fr] gap-x-2 gap-y-1 text-xs text-stone-500 mb-1">
-        <span>立順</span>
-        <span className="text-center">1回目</span>
-        <span className="text-center">変化</span>
-        <span className="text-center">2回目</span>
-      </div>
+      <div className="overflow-x-auto pb-2">
+        <div className="min-w-[500px]">
+          <div
+            className="grid gap-x-2 gap-y-1 text-xs text-stone-500 mb-1 items-center"
+            style={{ gridTemplateColumns: colTemplate }}
+          >
+            <span>立順</span>
+            {Array.from({ length: maxAttempts }, (_, i) => (
+              <React.Fragment key={i}>
+                {i > 0 && <span className="text-center">変化</span>}
+                <span className="text-center">{i + 1}回目</span>
+              </React.Fragment>
+            ))}
+          </div>
 
-      <div className="space-y-2">
-        {rows.map(({ shortLabel, first, second }) => {
-          const trend = compareAttempts(first, second);
-          return (
-            <div
-              key={shortLabel}
-              className="grid grid-cols-[3rem_1fr_2rem_1fr] sm:grid-cols-[4.5rem_1fr_2.75rem_1fr] gap-x-2 items-center"
-            >
-              <span className="text-sm font-medium text-stone-800 truncate">
-                {shortLabel}
-              </span>
-              <HitRateBar
-                rate={first.hitRate}
-                hits={first.hits}
-                total={first.total}
-                color={color}
-              />
-              <TrendIcon kind={trend.kind} delta={trend.delta} />
-              <HitRateBar
-                rate={second.hitRate}
-                hits={second.hits}
-                total={second.total}
-                color={color}
-              />
-            </div>
-          );
-        })}
+          <div className="space-y-2">
+            {rows.map(({ shortLabel, attempts }) => {
+              return (
+                <div
+                  key={shortLabel}
+                  className="grid gap-x-2 items-center"
+                  style={{ gridTemplateColumns: colTemplate }}
+                >
+                  <span className="text-sm font-medium text-stone-800 truncate">
+                    {shortLabel}
+                  </span>
+                  {attempts.map((att, i) => {
+                    const prevAtt = i > 0 ? attempts[i - 1] : null;
+                    const trend = prevAtt ? compareAttempts(prevAtt, att) : null;
+                    return (
+                      <React.Fragment key={i}>
+                        {i > 0 && trend && (
+                          <TrendIcon kind={trend.kind} delta={trend.delta} />
+                        )}
+                        <HitRateBar
+                          rate={att.hitRate}
+                          hits={att.hits}
+                          total={att.total}
+                          color={color}
+                        />
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -696,73 +723,26 @@ function HorizontalRoundChart({
 }
 
 function RoundHitRateCharts({ rounds }: { rounds: RoundStat[] }) {
-  const { first, second, other, tachiOrder } = splitRoundsByAttempt(rounds);
-  const hasSplit = tachiOrder.length > 0;
+  const { attemptRowsByTachi, maxAttempts, tachiOrder } =
+    splitRoundsByAttempt(rounds);
 
-  if (!hasSplit) {
-    const fallback =
-      other.length > 0
-        ? other
-        : rounds.map((r) => ({ ...r, shortLabel: r.label }));
-    const male = fallback.filter(
-      (r) =>
-        (inferGenderFromLabel(r.shortLabel) ??
-          inferGenderFromMembers(r)) === "MALE"
-    );
-    const female = fallback.filter(
-      (r) =>
-        (inferGenderFromLabel(r.shortLabel) ??
-          inferGenderFromMembers(r)) === "FEMALE"
-    );
-    const rest = fallback.filter((r) => {
-      const g =
-        inferGenderFromLabel(r.shortLabel) ?? inferGenderFromMembers(r);
-      return g === "OTHER";
-    });
-
-    return (
-      <div className="space-y-6">
-        {male.length > 0 && (
-          <HorizontalRoundChart
-            title="男子"
-            data={male}
-            color={GENDER_BAR_COLOR.MALE}
-          />
-        )}
-        {female.length > 0 && (
-          <HorizontalRoundChart
-            title="女子"
-            data={female}
-            color={GENDER_BAR_COLOR.FEMALE}
-          />
-        )}
-        {rest.length > 0 && (
-          <HorizontalRoundChart
-            title="その他"
-            data={rest}
-            color={GENDER_BAR_COLOR.OTHER}
-          />
-        )}
-      </div>
-    );
+  if (tachiOrder.length === 0) {
+    return <p className="text-center text-stone-400 text-sm py-8">データなし</p>;
   }
 
   const byGender: Record<
     GenderKey,
     Array<{
       shortLabel: string;
-      first: RoundChartRow;
-      second: RoundChartRow;
+      attempts: RoundChartRow[];
     }>
   > = { MALE: [], FEMALE: [], OTHER: [] };
 
-  for (let i = 0; i < tachiOrder.length; i++) {
-    const shortLabel = tachiOrder[i];
-    const f = first[i];
-    const s = second[i];
+  for (const item of attemptRowsByTachi) {
     const gender =
-      inferGenderFromLabel(shortLabel) ?? inferGenderFromMembers(f, s);
-    byGender[gender].push({ shortLabel, first: f, second: s });
+      inferGenderFromLabel(item.shortLabel) ??
+      inferGenderFromMembers(...item.attempts);
+    byGender[gender].push(item);
   }
 
   const sections = (["MALE", "FEMALE", "OTHER"] as GenderKey[]).filter(
@@ -800,16 +780,9 @@ function RoundHitRateCharts({ rounds }: { rounds: RoundStat[] }) {
           key={gender}
           gender={gender}
           rows={byGender[gender]}
+          maxAttempts={maxAttempts}
         />
       ))}
-
-      {other.length > 0 && (
-        <HorizontalRoundChart
-          title="回次なし"
-          data={other}
-          color={GENDER_BAR_COLOR.OTHER}
-        />
-      )}
     </div>
   );
 }
