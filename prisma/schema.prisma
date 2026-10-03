@@ -65,6 +65,7 @@ model Entry {
   roundId         Int
   memberId        Int
   positionInRound Int
+  overallHitRate  Float?
   createdAt       DateTime @default(now())
 
   round  Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)

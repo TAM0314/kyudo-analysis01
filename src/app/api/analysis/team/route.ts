@@ -38,18 +38,25 @@ export async function GET(req: NextRequest) {
   }
 
   const roundStats = tournament.rounds.map((round) => {
-    const allShots = round.entries.flatMap((e) => e.shots);
-    const hits = allShots.filter((s) => s.result === "HIT").length;
-    const total = allShots.length;
+    const memberResults = round.entries.map((entry) => {
+      let hits = entry.shots.filter((s) => s.result === "HIT").length;
+      let total = entry.shots.length;
+      if (entry.overallHitRate != null) {
+        total = 1000;
+        hits = Math.round(entry.overallHitRate * 1000);
+      }
+      return {
+        memberNumber: entry.member.number,
+        gender: entry.member.gender as string,
+        grade: entry.member.grade,
+        arrowResults: entry.shots.map((s) => s.result as string),
+        hits,
+        total,
+      };
+    });
 
-    const memberResults = round.entries.map((entry) => ({
-      memberNumber: entry.member.number,
-      gender: entry.member.gender as string,
-      grade: entry.member.grade,
-      arrowResults: entry.shots.map((s) => s.result as string),
-      hits: entry.shots.filter((s) => s.result === "HIT").length,
-      total: entry.shots.length,
-    }));
+    const hits = memberResults.reduce((s, m) => s + m.hits, 0);
+    const total = memberResults.reduce((s, m) => s + m.total, 0);
 
     return {
       roundId: round.id,

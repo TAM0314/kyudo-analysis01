@@ -65,13 +65,18 @@ export async function GET(req: NextRequest) {
       });
     }
     const arrowResults = entry.shots.map((s) => s.result as string);
-    const hits = entry.shots.filter((s) => s.result === "HIT").length;
+    let hits = entry.shots.filter((s) => s.result === "HIT").length;
+    let total = entry.shots.length;
+    if (entry.overallHitRate != null) {
+      total = 1000;
+      hits = Math.round(entry.overallHitRate * 1000);
+    }
     tournamentMap.get(t.id)!.rounds.push({
       roundId: entry.round.id,
       roundNumber: entry.round.roundNumber,
       label: entry.round.label,
       hits,
-      total: entry.shots.length,
+      total,
       arrowResults,
     });
   }

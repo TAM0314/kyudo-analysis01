@@ -71,9 +71,14 @@ export async function GET(req: NextRequest) {
       });
     }
     const stat = statsMap.get(num)!;
-    const hits = entry.shots.filter((s) => s.result === "HIT").length;
+    let hits = entry.shots.filter((s) => s.result === "HIT").length;
+    let total = entry.shots.length;
+    if (entry.overallHitRate != null) {
+      total = 1000;
+      hits = Math.round(entry.overallHitRate * 1000);
+    }
     stat.hits += hits;
-    stat.total += entry.shots.length;
+    stat.total += total;
     stat.tournamentIds.add(entry.round.tournament.id);
   }
 
