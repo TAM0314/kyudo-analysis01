@@ -256,6 +256,7 @@ export async function POST(req: NextRequest) {
               roundId: round.id,
               memberId,
               positionInRound,
+              overallHitRate: row.overallHitRate ?? null,
             },
           });
           entriesCreated++;
