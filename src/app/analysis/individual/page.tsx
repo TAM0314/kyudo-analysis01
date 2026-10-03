@@ -88,6 +88,7 @@ function computeArrowStatsFromData(data: ChartDataPoint[]): ArrowStat[] {
     let hits = 0;
     let total = 0;
     for (const t of data) {
+      if (t.type === "SELECTION") continue;
       for (const r of t.rounds) {
         const result = r.arrowResults[n - 1];
         if (result !== undefined) {

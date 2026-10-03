@@ -64,21 +64,14 @@ export async function GET(req: NextRequest) {
 
   for (const [tId, tEntries] of entriesByTournament.entries()) {
     const t = tEntries[0].round.tournament;
-    const roundCount = tEntries.length;
+    const isSelection = t.type === "SELECTION" || tEntries.some((e) => e.overallHitRate != null);
 
-    const rounds = tEntries.map((entry, idx) => {
+    const rounds = tEntries.map((entry) => {
       const arrowResults = entry.shots.map((s) => s.result as string);
-      let hits: number;
-      let total: number;
+      let hits = 0;
+      let total = 0;
 
-      if (entry.overallHitRate != null) {
-        total = Math.round(1000 / roundCount);
-        if (idx === roundCount - 1) {
-          const previousTotalSum = Math.round(1000 / roundCount) * (roundCount - 1);
-          total = 1000 - previousTotalSum;
-        }
-        hits = Math.round(total * entry.overallHitRate);
-      } else {
+      if (!isSelection) {
         hits = entry.shots.filter((s) => s.result === "HIT").length;
         total = entry.shots.length;
       }
@@ -111,22 +104,43 @@ export async function GET(req: NextRequest) {
     .slice(0, limit);
 
   const chartData = sorted.reverse().map((t) => {
-    const totalHits = t.rounds.reduce((sum, r) => sum + r.hits, 0);
-    const totalShots = t.rounds.reduce((sum, r) => sum + r.total, 0);
-    return {
-      tournamentId: t.tournamentId,
-      name: t.tournamentName,
-      date: t.tournamentDate,
-      type: t.tournamentType,
-      hitRate: computeHitRatePercent(totalHits, totalShots),
-      hits: totalHits,
-      total: totalShots,
-      rounds: t.rounds,
-    };
+    if (t.tournamentType === "SELECTION") {
+      const tEntries = entries.filter((e) => e.round.tournament.id === t.tournamentId);
+      const rates = tEntries
+        .filter((e) => e.overallHitRate != null)
+        .map((e) => (e.overallHitRate as number) * 100);
+      const hitRate = rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
+      return {
+        tournamentId: t.tournamentId,
+        name: t.tournamentName,
+        date: t.tournamentDate,
+        type: t.tournamentType,
+        hitRate,
+        hits: 0,
+        total: 0,
+        rounds: t.rounds,
+      };
+    } else {
+      const totalHits = t.rounds.reduce((sum, r) => sum + r.hits, 0);
+      const totalShots = t.rounds.reduce((sum, r) => sum + r.total, 0);
+      return {
+        tournamentId: t.tournamentId,
+        name: t.tournamentName,
+        date: t.tournamentDate,
+        type: t.tournamentType,
+        hitRate: computeHitRatePercent(totalHits, totalShots),
+        hits: totalHits,
+        total: totalShots,
+        rounds: t.rounds,
+      };
+    }
   });
 
+  const regularEntries = entries.filter(
+    (e) => e.overallHitRate == null && e.round.tournament.type !== "SELECTION"
+  );
   const arrowStats = [1, 2, 3, 4].map((n) => {
-    const all = entries.flatMap((e) =>
+    const all = regularEntries.flatMap((e) =>
       e.shots.filter((s) => s.arrowNumber === n)
     );
     const hits = all.filter((s) => s.result === "HIT").length;
