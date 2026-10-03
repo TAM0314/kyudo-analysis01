@@ -32,11 +32,13 @@ export async function GET(req: NextRequest) {
       : undefined;
 
   const entries = await prisma.entry.findMany({
-    where: {
-      round: {
-        tournament: typeFilter ? { type: typeFilter } : undefined,
-      },
-    },
+    where: typeFilter
+      ? {
+          round: {
+            tournament: { type: typeFilter },
+          },
+        }
+      : undefined,
     include: {
       member: true,
       shots: true,
@@ -46,63 +48,126 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  type MemberStats = {
+  type MemberAccumulator = {
     memberNumber: number;
     grade: number | null;
     gender: string;
-    hits: number;
-    total: number;
-    tournamentIds: Set<number>;
+    regHits: number;
+    regTotal: number;
+    selectionRates: number[];
+    regTournamentIds: Set<number>;
+    selTournamentIds: Set<number>;
+    processedSelectionTournaments: Set<number>;
   };
 
-  const statsMap = new Map<number, MemberStats>();
-  const processedSelection = new Set<string>();
+  const map = new Map<number, MemberAccumulator>();
 
   for (const entry of entries) {
     const num = entry.member.number;
     if (num === 9999) continue;
-    if (!statsMap.has(num)) {
-      statsMap.set(num, {
+    if (!map.has(num)) {
+      map.set(num, {
         memberNumber: num,
         grade: entry.member.grade,
         gender: entry.member.gender,
-        hits: 0,
-        total: 0,
-        tournamentIds: new Set(),
+        regHits: 0,
+        regTotal: 0,
+        selectionRates: [],
+        regTournamentIds: new Set(),
+        selTournamentIds: new Set(),
+        processedSelectionTournaments: new Set(),
       });
     }
-    const stat = statsMap.get(num)!;
-    const tournamentId = entry.round.tournament.id;
-    stat.tournamentIds.add(tournamentId);
+    const acc = map.get(num)!;
+    const t = entry.round.tournament;
+    const isSelection = t.type === "SELECTION" || entry.overallHitRate != null;
 
-    if (entry.overallHitRate != null) {
-      const key = `${num}:${tournamentId}`;
-      if (!processedSelection.has(key)) {
-        processedSelection.add(key);
-        const hits = Math.round(1000 * entry.overallHitRate);
-        const total = 1000;
-        stat.hits += hits;
-        stat.total += total;
+    if (isSelection) {
+      if (entry.overallHitRate != null && !acc.processedSelectionTournaments.has(t.id)) {
+        acc.processedSelectionTournaments.add(t.id);
+        acc.selectionRates.push(entry.overallHitRate);
+        acc.selTournamentIds.add(t.id);
       }
     } else {
-      let hits = entry.shots.filter((s) => s.result === "HIT").length;
-      let total = entry.shots.length;
-      stat.hits += hits;
-      stat.total += total;
+      const hits = entry.shots.filter((s) => s.result === "HIT").length;
+      const total = entry.shots.length;
+      acc.regHits += hits;
+      acc.regTotal += total;
+      acc.regTournamentIds.add(t.id);
     }
   }
 
-  const toRanking = (gender: string): RankingMember[] =>
-    Array.from(statsMap.values())
-      .filter((s) => s.gender === gender && s.total >= minShots)
-      .map((s) => ({
-        memberNumber: s.memberNumber,
-        grade: s.grade,
-        hits: s.hits,
-        total: s.total,
-        hitRate: computeHitRatePercent(s.hits, s.total),
-        tournamentCount: s.tournamentIds.size,
-      }));
+  const toRanking = (gender: string): RankingMember[] => {
+    const list: RankingMember[] = [];
+
+    for (const acc of map.values()) {
+      if (acc.gender !== gender) continue;
+
+      let hits = 0;
+      let total = 0;
+      let hitRate = 0;
+      let tournamentCount = 0;
+      let qualifies = false;
+
+      const regRate = acc.regTotal > 0 ? (acc.regHits / acc.regTotal) * 100 : null;
+      const selRate = acc.selectionRates.length > 0
+        ? (acc.selectionRates.reduce((a, b) => a + b, 0) / acc.selectionRates.length) * 100
+        : null;
+
+      if (typeParam === "SELECTION") {
+        if (acc.selectionRates.length === 0) continue;
+        hits = 0;
+        total = 0;
+        hitRate = selRate ?? 0;
+        tournamentCount = acc.selTournamentIds.size;
+        qualifies = tournamentCount > 0;
+      } else if (typeParam === "PUBLIC" || typeParam === "PRACTICE") {
+        if (acc.regTotal < minShots) continue;
+        // Check if regTournamentIds include typeFilter
+        // To be strict, let's verify if reg tournaments match typeFilter if typeFilter is specified.
+        // Actually, if entries were fetched or filtered by typeFilter:
+        // Let's filter entries by typeFilter if typeFilter is set.
+        hits = acc.regHits;
+        total = acc.regTotal;
+        hitRate = regRate ?? 0;
+        tournamentCount = acc.regTournamentIds.size;
+        qualifies = total >= minShots;
+      } else {
+        // "ALL"
+        if (acc.regTotal < minShots && acc.selectionRates.length === 0) continue;
+        if (acc.regTotal > 0 && acc.regTotal < minShots) continue;
+
+        hits = acc.regHits;
+        total = acc.regTotal;
+
+        if (regRate !== null && selRate !== null) {
+          hitRate = (regRate + selRate) / 2;
+        } else if (regRate !== null) {
+          hitRate = regRate;
+        } else if (selRate !== null) {
+          hitRate = selRate;
+        } else {
+          hitRate = 0;
+        }
+
+        tournamentCount = acc.regTournamentIds.size + acc.selTournamentIds.size;
+        qualifies = acc.regTotal >= minShots || (acc.regTotal === 0 && acc.selectionRates.length > 0);
+      }
+
+      if (!qualifies) continue;
+
+      list.push({
+        memberNumber: acc.memberNumber,
+        grade: acc.grade,
+        hits,
+        total,
+        hitRate,
+        tournamentCount,
+      });
+    }
+
+    return list;
+  };
 
   return NextResponse.json({
     male: toRanking("MALE"),
