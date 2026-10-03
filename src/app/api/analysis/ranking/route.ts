@@ -56,6 +56,7 @@ export async function GET(req: NextRequest) {
   };
 
   const statsMap = new Map<number, MemberStats>();
+  const processedSelection = new Set<string>();
 
   for (const entry of entries) {
     const num = entry.member.number;
@@ -71,15 +72,24 @@ export async function GET(req: NextRequest) {
       });
     }
     const stat = statsMap.get(num)!;
-    let hits = entry.shots.filter((s) => s.result === "HIT").length;
-    let total = entry.shots.length;
+    const tournamentId = entry.round.tournament.id;
+    stat.tournamentIds.add(tournamentId);
+
     if (entry.overallHitRate != null) {
-      total = 1000;
-      hits = Math.round(entry.overallHitRate * 1000);
+      const key = `${num}:${tournamentId}`;
+      if (!processedSelection.has(key)) {
+        processedSelection.add(key);
+        const hits = Math.round(1000 * entry.overallHitRate);
+        const total = 1000;
+        stat.hits += hits;
+        stat.total += total;
+      }
+    } else {
+      let hits = entry.shots.filter((s) => s.result === "HIT").length;
+      let total = entry.shots.length;
+      stat.hits += hits;
+      stat.total += total;
     }
-    stat.hits += hits;
-    stat.total += total;
-    stat.tournamentIds.add(entry.round.tournament.id);
   }
 
   const toRanking = (gender: string): RankingMember[] =>

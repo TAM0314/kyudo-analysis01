@@ -51,33 +51,54 @@ export async function GET(req: NextRequest) {
     }[];
   };
 
+  const entriesByTournament = new Map<number, typeof entries>();
+  for (const entry of entries) {
+    const tId = entry.round.tournament.id;
+    if (!entriesByTournament.has(tId)) {
+      entriesByTournament.set(tId, []);
+    }
+    entriesByTournament.get(tId)!.push(entry);
+  }
+
   const tournamentMap = new Map<number, TournamentGroup>();
 
-  for (const entry of entries) {
-    const t = entry.round.tournament;
-    if (!tournamentMap.has(t.id)) {
-      tournamentMap.set(t.id, {
-        tournamentId: t.id,
-        tournamentName: t.name,
-        tournamentDate: t.date,
-        tournamentType: t.type,
-        rounds: [],
-      });
-    }
-    const arrowResults = entry.shots.map((s) => s.result as string);
-    let hits = entry.shots.filter((s) => s.result === "HIT").length;
-    let total = entry.shots.length;
-    if (entry.overallHitRate != null) {
-      total = 1000;
-      hits = Math.round(entry.overallHitRate * 1000);
-    }
-    tournamentMap.get(t.id)!.rounds.push({
-      roundId: entry.round.id,
-      roundNumber: entry.round.roundNumber,
-      label: entry.round.label,
-      hits,
-      total,
-      arrowResults,
+  for (const [tId, tEntries] of entriesByTournament.entries()) {
+    const t = tEntries[0].round.tournament;
+    const roundCount = tEntries.length;
+
+    const rounds = tEntries.map((entry, idx) => {
+      const arrowResults = entry.shots.map((s) => s.result as string);
+      let hits: number;
+      let total: number;
+
+      if (entry.overallHitRate != null) {
+        total = Math.round(1000 / roundCount);
+        if (idx === roundCount - 1) {
+          const previousTotalSum = Math.round(1000 / roundCount) * (roundCount - 1);
+          total = 1000 - previousTotalSum;
+        }
+        hits = Math.round(total * entry.overallHitRate);
+      } else {
+        hits = entry.shots.filter((s) => s.result === "HIT").length;
+        total = entry.shots.length;
+      }
+
+      return {
+        roundId: entry.round.id,
+        roundNumber: entry.round.roundNumber,
+        label: entry.round.label,
+        hits,
+        total,
+        arrowResults,
+      };
+    });
+
+    tournamentMap.set(tId, {
+      tournamentId: t.id,
+      tournamentName: t.name,
+      tournamentDate: t.date,
+      tournamentType: t.type,
+      rounds,
     });
   }
 
