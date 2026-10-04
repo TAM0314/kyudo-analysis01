@@ -139,6 +139,7 @@ export default function RankingPage() {
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [minShots, setMinShots] = useState(8);
   const [inputMinShots, setInputMinShots] = useState("8");
+  const [excludedGrades, setExcludedGrades] = useState<Set<number>>(new Set());
   const [data, setData] = useState<RankingResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [maleSortKey, setMaleSortKey] = useState<SortKey>("hitRate");
@@ -166,6 +167,27 @@ export default function RankingPage() {
     const n = parseInt(inputMinShots, 10);
     if (!isNaN(n) && n >= 0) setMinShots(n);
   }
+
+  function toggleGrade(grade: number) {
+    setExcludedGrades((prev) => {
+      const next = new Set(prev);
+      if (next.has(grade)) {
+        next.delete(grade);
+      } else {
+        next.add(grade);
+      }
+      return next;
+    });
+  }
+
+  const filteredMale = useMemo(
+    () => (data?.male ?? []).filter((m) => m.grade === null || !excludedGrades.has(m.grade)),
+    [data, excludedGrades]
+  );
+  const filteredFemale = useMemo(
+    () => (data?.female ?? []).filter((m) => m.grade === null || !excludedGrades.has(m.grade)),
+    [data, excludedGrades]
+  );
 
   return (
     <div className="space-y-5">
@@ -229,6 +251,29 @@ export default function RankingPage() {
                 <span className="text-sm text-stone-500">射</span>
               </div>
             </div>
+
+            {/* 学年フィルター */}
+            <div className="space-y-1">
+              <p className="text-xs text-stone-500">学年表示（クリックで除外/表示）</p>
+              <div className="flex gap-1.5">
+                {[1, 2, 3].map((g) => {
+                  const included = !excludedGrades.has(g);
+                  return (
+                    <button
+                      key={g}
+                      onClick={() => toggleGrade(g)}
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                        included
+                          ? "bg-stone-800 text-white"
+                          : "bg-stone-100 text-stone-400 hover:bg-stone-200"
+                      }`}
+                    >
+                      {g}年生
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -238,14 +283,14 @@ export default function RankingPage() {
       ) : data ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <RankingTable
-            title={`男子 (${data.male.length}名)`}
-            members={data.male}
+            title={`男子 (${filteredMale.length}名)`}
+            members={filteredMale}
             sortKey={maleSortKey}
             onSortChange={setMaleSortKey}
           />
           <RankingTable
-            title={`女子 (${data.female.length}名)`}
-            members={data.female}
+            title={`女子 (${filteredFemale.length}名)`}
+            members={filteredFemale}
             sortKey={femaleSortKey}
             onSortChange={setFemaleSortKey}
           />
