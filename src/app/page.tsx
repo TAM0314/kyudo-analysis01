@@ -6,7 +6,15 @@ import { formatDate, tournamentTypeLabel, formatHitRate, computeHitRatePercent }
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ limit?: string }> | { limit?: string };
+}) {
+  const params = searchParams ? await searchParams : {};
+  const limitParam = params.limit ?? "5";
+  const takeLimit = limitParam === "all" ? undefined : (parseInt(limitParam, 10) || 5);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let tournaments: any[] = [];
   let memberCount = 0;
@@ -17,7 +25,7 @@ export default async function DashboardPage() {
     [tournaments, memberCount, tournamentCount] = await Promise.all([
       prisma.tournament.findMany({
         orderBy: { date: "desc" },
-        take: 5,
+        take: takeLimit,
         include: {
           rounds: {
             include: { entries: { include: { shots: true } } },
@@ -97,7 +105,33 @@ export default async function DashboardPage() {
 
       {/* 直近の試合 */}
       <div>
-        <h2 className="text-lg font-semibold mb-3">直近の試合・大会</h2>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h2 className="text-lg font-semibold">直近の試合・大会</h2>
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-stone-400 mr-1">表示件数:</span>
+            {[
+              { label: "5件", value: "5" },
+              { label: "10件", value: "10" },
+              { label: "20件", value: "20" },
+              { label: "すべて", value: "all" },
+            ].map((opt) => {
+              const active = limitParam === opt.value;
+              return (
+                <Link
+                  key={opt.value}
+                  href={`/?limit=${opt.value}`}
+                  className={`px-2.5 py-1 rounded transition-colors ${
+                    active
+                      ? "bg-stone-800 text-white font-medium"
+                      : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                  }`}
+                >
+                  {opt.label}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
         {tournaments.length === 0 ? (
           <Card>
             <CardContent className="py-8 text-center text-stone-400">
