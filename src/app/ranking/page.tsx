@@ -139,7 +139,7 @@ export default function RankingPage() {
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [minShots, setMinShots] = useState(8);
   const [inputMinShots, setInputMinShots] = useState("8");
-  const [excludedGrades, setExcludedGrades] = useState<Set<number>>(new Set());
+  const [excludedGrades, setExcludedGrades] = useState<Set<number | null>>(new Set());
   const [data, setData] = useState<RankingResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [maleSortKey, setMaleSortKey] = useState<SortKey>("hitRate");
@@ -168,7 +168,7 @@ export default function RankingPage() {
     if (!isNaN(n) && n >= 0) setMinShots(n);
   }
 
-  function toggleGrade(grade: number) {
+  function toggleGrade(grade: number | null) {
     setExcludedGrades((prev) => {
       const next = new Set(prev);
       if (next.has(grade)) {
@@ -181,11 +181,11 @@ export default function RankingPage() {
   }
 
   const filteredMale = useMemo(
-    () => (data?.male ?? []).filter((m) => m.grade === null || !excludedGrades.has(m.grade)),
+    () => (data?.male ?? []).filter((m) => !excludedGrades.has(m.grade)),
     [data, excludedGrades]
   );
   const filteredFemale = useMemo(
-    () => (data?.female ?? []).filter((m) => m.grade === null || !excludedGrades.has(m.grade)),
+    () => (data?.female ?? []).filter((m) => !excludedGrades.has(m.grade)),
     [data, excludedGrades]
   );
 
@@ -255,12 +255,13 @@ export default function RankingPage() {
             {/* 学年フィルター */}
             <div className="space-y-1">
               <p className="text-xs text-stone-500">学年表示（クリックで除外/表示）</p>
-              <div className="flex gap-1.5">
-                {[1, 2, 3].map((g) => {
+              <div className="flex gap-1.5 flex-wrap">
+                {[1, 2, 3, null].map((g) => {
                   const included = !excludedGrades.has(g);
+                  const label = g === null ? "未設定(-)" : `${g}年生`;
                   return (
                     <button
-                      key={g}
+                      key={String(g)}
                       onClick={() => toggleGrade(g)}
                       className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                         included
@@ -268,7 +269,7 @@ export default function RankingPage() {
                           : "bg-stone-100 text-stone-400 hover:bg-stone-200"
                       }`}
                     >
-                      {g}年生
+                      {label}
                     </button>
                   );
                 })}
