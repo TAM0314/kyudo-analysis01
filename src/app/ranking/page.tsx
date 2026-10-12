@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatHitRateFixed } from "@/lib/utils";
 import type { RankingMember, RankingResponse } from "@/app/api/analysis/ranking/route";
+import * as XLSX from "xlsx";
+import { FileSpreadsheet } from "lucide-react";
 
 const TYPE_OPTIONS = [
   { value: "ALL", label: "すべて" },
@@ -189,6 +191,46 @@ export default function RankingPage() {
     [data, excludedGrades]
   );
 
+  function exportToExcel() {
+    const formatRows = (members: typeof filteredMale, sortKey: SortKey) => {
+      const sorted = [...members].sort((a, b) =>
+        sortKey === "hitRate" ? b.hitRate - a.hitRate : b.hits - a.hits
+      );
+      return sorted.map((m, i) => ({
+        "順位": i + 1,
+        "部員番号": m.memberNumber,
+        "学年": m.grade === null ? "-" : `${m.grade}年`,
+        "的中率": m.hitRate / 100,
+        "的中数": m.hits,
+        "射数": m.total,
+      }));
+    };
+
+    const maleRows = formatRows(filteredMale, maleSortKey);
+    const femaleRows = formatRows(filteredFemale, femaleSortKey);
+
+    const wb = XLSX.utils.book_new();
+    const wsMale = XLSX.utils.json_to_sheet(maleRows);
+    const wsFemale = XLSX.utils.json_to_sheet(femaleRows);
+
+    const setPercentFormat = (ws: XLSX.WorkSheet, rowCount: number) => {
+      for (let r = 2; r <= rowCount + 1; r++) {
+        const cellRef = XLSX.utils.encode_cell({ r: r - 1, c: 3 });
+        if (ws[cellRef]) {
+          ws[cellRef].z = "0.00%";
+        }
+      }
+    };
+    setPercentFormat(wsMale, maleRows.length);
+    setPercentFormat(wsFemale, femaleRows.length);
+
+    XLSX.utils.book_append_sheet(wb, wsMale, "男子ランキング");
+    XLSX.utils.book_append_sheet(wb, wsFemale, "女子ランキング");
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `ranking_${dateStr}.xlsx`);
+  }
+
   return (
     <div className="space-y-5">
       <div>
@@ -196,6 +238,18 @@ export default function RankingPage() {
         <p className="text-stone-500 text-sm mt-1">
           部員の的中率・的中数を比較
         </p>
+      </div>
+
+      {/* フィルターヘッダー & エクスポートボタン */}
+      <div className="flex justify-between items-center">
+        <span className="text-xs font-semibold text-stone-500">絞り込みフィルター</span>
+        <button
+          onClick={exportToExcel}
+          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-sm font-medium flex items-center gap-1.5 transition-colors shadow-sm"
+        >
+          <FileSpreadsheet className="w-4 h-4" />
+          Excelエクスポート
+        </button>
       </div>
 
       {/* フィルター */}
