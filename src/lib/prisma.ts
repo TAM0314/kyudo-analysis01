@@ -2,7 +2,10 @@ import { PrismaClient } from "@/generated/prisma/client";
 import { PrismaNeonHttp } from "@prisma/adapter-neon";
 
 function createPrismaClient(): PrismaClient {
-  const connectionString = process.env.DATABASE_URL!;
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("環境変数 DATABASE_URL が設定されていません。Vercelのプロジェクト設定（Environment Variables）または .env ファイルに Neon のデータベース接続文字列を設定してください。");
+  }
   // PrismaNeonHttp takes (connectionString, options)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const adapter = new PrismaNeonHttp(connectionString, {} as any);
