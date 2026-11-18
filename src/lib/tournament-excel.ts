@@ -105,20 +105,20 @@ export function parseSelectionExcelSheet(
     }
     if (headerRow >= 0) {
       if (hitRateCol < 0) hitRateCol = 2; // Column C fallback
-      // ヘッダー行またはその周辺で日付列（例: 916, 917 や 9/16 など）を検知
+      // 番号列の右側にあるすべての列（ヘッダーがあるかデータが存在する列）を日付・回数（セッション）列として検知
       const headerRowCells = aoa[headerRow] ?? [];
-      const topRowCells = r > 0 ? aoa[r - 1] ?? [] : [];
-      for (let c = 0; c < headerRowCells.length; c++) {
+      for (let c = numberCol + 1; c < headerRowCells.length; c++) {
         const val = cellStr(headerRowCells[c]);
-        const topVal = cellStr(topRowCells[c]);
-        const combined = topVal ? `${topVal} ${val}` : val;
-        // 3桁以上の数字（例: 916）や日付パターン
-        if (/^\d{3,4}$/.test(val) || /^\d{1,2}\/\d{1,2}$/.test(val) || /^\d{3,4}$/.test(combined)) {
-          const label = /^\d{3,4}$/.test(val) && val.length === 3 
-            ? `${val[0]}/${val.slice(1)}` 
-            : /^\d{4}$/.test(val) 
-            ? `${val.slice(0, 2)}/${val.slice(2)}` 
-            : val;
+        let hasData = false;
+        for (let r = headerRow + 1; r < Math.min(headerRow + 30, aoa.length); r++) {
+          const cellV = cellStr((aoa[r] ?? [])[c]);
+          if (cellV !== "" && cellV !== "-") {
+            hasData = true;
+            break;
+          }
+        }
+        if (val || hasData) {
+          const label = val || `Day ${dateCols.length + 1}`;
           dateCols.push({ colIndex: c, label });
         }
       }
@@ -128,19 +128,6 @@ export function parseSelectionExcelSheet(
 
   if (headerRow < 0 || numberCol < 0) {
     return { titleHint, rows: [], dateColumns: [], warnings: ["校内選考形式のヘッダー（no / 番号）が見つかりません"] };
-  }
-
-  // もしヘッダー行で日付列が見つからなかった場合、数値列（0〜1の少数または日付らしい列）をスキャン
-  if (dateCols.length === 0) {
-    const sampleRow = aoa[headerRow + 1] ?? [];
-    for (let c = 0; c < sampleRow.length; c++) {
-      if (c === numberCol || c === prevRankCol || c === currRankCol) continue;
-      const val = Number(sampleRow[c]);
-      if (!isNaN(val) && val >= 0 && val <= 1) {
-        const headerVal = cellStr((aoa[headerRow] ?? [])[c]);
-        dateCols.push({ colIndex: c, label: headerVal || `Day ${dateCols.length + 1}` });
-      }
-    }
   }
 
   const rows: ParsedSelectionArcherRow[] = [];
